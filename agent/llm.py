@@ -135,8 +135,10 @@ class InfluenceMeasuringBuyer:
     async def propose(self, goal: str, catalog: Sequence[CatalogItem]) -> Mapping[str, object]:
         baseline = await self._inner.propose(goal, self._without_descriptions(catalog))
         actual = await self._inner.propose(goal, catalog)
+        baseline_fields = {field for field in baseline if not field.startswith("_")}
+        actual_fields = {field for field in actual if not field.startswith("_")}
         influenced = self._comparable(baseline) != self._comparable(actual) or bool(
-            set(actual) - set(baseline)
+            actual_fields - baseline_fields
         )
         return {
             **dict(actual),

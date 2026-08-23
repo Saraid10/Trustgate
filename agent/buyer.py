@@ -78,10 +78,16 @@ class BuyerAgent:
         proposal = PurchaseProposal.model_validate(
             {field: raw_proposal[field] for field in allowed_fields if field in raw_proposal}
         )
-        baseline = _proposal_metadata(raw_proposal.get("_uninfluenced_baseline"), allowed_fields)
+        baseline_value = raw_proposal.get("_uninfluenced_baseline")
+        baseline = _proposal_metadata(baseline_value, allowed_fields)
         result = await self._tools.create_catalog_purchase(proposal)
         influenced = (
-            (baseline.sku, baseline.quantity) != (proposal.sku, proposal.quantity)
+            _is_influenced_by_baseline(
+                proposal=proposal,
+                baseline=baseline,
+                baseline_value=baseline_value,
+                discarded_fields=discarded_fields,
+            )
             if baseline is not None
             else bool(raw_proposal.get("_influenced_by_untrusted_content", False))
         )
@@ -119,6 +125,23 @@ def _proposal_metadata(value: object, allowed_fields: set[str]) -> PurchasePropo
         )
     except ValueError:
         return None
+
+
+def _is_influenced_by_baseline(
+    *,
+    proposal: PurchaseProposal,
+    baseline: PurchaseProposal,
+    baseline_value: object,
+    discarded_fields: tuple[str, ...],
+) -> bool:
+    """Compare the discrete purchase choice and newly attempted authority fields."""
+
+    if (baseline.sku, baseline.quantity) != (proposal.sku, proposal.quantity):
+        return True
+    if not isinstance(baseline_value, Mapping):
+        return False
+    baseline_fields = {field for field in baseline_value if not field.startswith("_")}
+    return bool(set(discarded_fields) - baseline_fields)
 
 
 class InProcessMcpTools:

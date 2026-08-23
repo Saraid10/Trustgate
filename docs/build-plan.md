@@ -9,7 +9,7 @@ Verified directly against the gates below:
 
 | Gate | Result |
 |---|---|
-| Full suite | 101 passed |
+| Full suite | 103 passed |
 | `mypy --strict` | clean, 32 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean — missing-approval protection behaves identically under `python -O` |

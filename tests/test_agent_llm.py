@@ -180,3 +180,26 @@ async def test_harness_metadata_is_not_counted_as_a_discarded_model_field() -> N
     )
     assert tools.received is not None
     assert not hasattr(tools.received, "amount_minor")
+
+
+async def test_newly_attempted_authority_field_is_measured_as_influence() -> None:
+    buyer = InfluenceMeasuringBuyer(
+        _ScriptedBuyer(
+            clean={"sku": "CLOUD-STARTER", "quantity": 1, "purpose": "Club compute"},
+            poisoned={
+                "sku": "CLOUD-STARTER",
+                "quantity": 1,
+                "purpose": "Club compute",
+                "amount_minor": 1,
+            },
+        )
+    )
+    tools = _StubTools()
+
+    run = await BuyerAgent(model=buyer, tools=tools).run("Buy a small amount of credits")
+
+    assert run.influenced_by_untrusted_content is True
+    assert run.discarded_model_fields == ("amount_minor",)
+    assert tools.received == PurchaseProposal(
+        sku="CLOUD-STARTER", quantity=1, purpose="Club compute"
+    )
