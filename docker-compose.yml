@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: payment_safety
+      POSTGRES_USER: payment_safety
+      POSTGRES_PASSWORD: payment_safety
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_safety -d payment_safety"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    image: python:3.12-slim
+    working_dir: /app
+    command: >
+      sh -c "python -m pip install --upgrade pip
+      && python -m pip install -e '.[dev]'
+      && uvicorn api.app:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://payment_safety:payment_safety@postgres:5432/payment_safety
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mock-provider:
+    image: python:3.12-slim
+    working_dir: /app
+    command: >
+      sh -c "python -m pip install --upgrade pip
+      && python -m pip install -e '.[dev]'
+      && uvicorn mock_provider.app:app --host 0.0.0.0 --port 8001"
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - .:/app
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
