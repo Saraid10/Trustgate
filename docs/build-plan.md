@@ -2,20 +2,22 @@
 
 The complete phase and slice sequence from the current state to the finished project.
 
-**Status as of 2026-08-24.** Slices 1–6, the TrustGate authority upgrades, M0, and M1 are
-complete. M1's focused checks, three real command-line flows, and full regression run are recorded
-in [`docs/m1-verification.md`](m1-verification.md).
+**Status as of 2026-08-24.** Slices 1–6, the TrustGate authority upgrades, M0, M1, and M2 are
+complete. Per-milestone evidence is recorded in [`docs/m0-verification.md`](m0-verification.md),
+[`docs/m1-verification.md`](m1-verification.md), and [`docs/m2-verification.md`](m2-verification.md).
+M1's only outstanding item is the live-model run, which needs an Anthropic API key.
 Verified directly against the gates below:
 
 | Gate | Result |
 |---|---|
-| Full suite | 103 passed |
-| `mypy --strict` | clean, 32 source files |
+| Full suite | 123 passed |
+| `mypy --strict` | clean, 36 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean — missing-approval protection behaves identically under `python -O` |
 | Migration `base` → `head` round trip | clean, all nine revisions reversible |
 | Concurrency invariants raced | 4 PostgreSQL multi-session races passed |
-| Slice verification notes | present for slices 1–6 and hardening only |
+| Tier A scenarios | A1, A2, A11b, A15 passing; matrix generated from the registry |
+| Slice verification notes | present for slices 1–6, hardening, M0, M1, and M2 |
 
 (`docs/hardening-verification.md` records 22 source files for mypy; the count grew to 25 when the
 catalog, checkout-authority, and Razorpay route modules were added, and to 32 with M1's buyer-agent

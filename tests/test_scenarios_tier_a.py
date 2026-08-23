@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -22,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from api.app import app
 from api.database import get_session
 from mcp_server.server import create_mcp_server
-from models.domain import AuditEvent, CatalogItem, Payment, PaymentRequest
+from models.domain import (
+    AuditEvent,
+    CatalogItem,
+    CheckoutAuthority,
+    Payment,
+    PaymentRequest,
+)
 from scenarios.report import extract_section, render_section
 from scenarios.tier_a import REGISTRY
 from scenarios.tier_a.harness import (
@@ -120,6 +127,25 @@ async def _seed_tenant_b_payment(session: AsyncSession, data: FixtureData) -> Pa
     return payment
 
 
+async def _seed_tenant_a_authority(session: AsyncSession, data: FixtureData) -> CheckoutAuthority:
+    """Create a genuinely valid, unconsumed checkout authority owned by tenant A."""
+
+    now = datetime.now(UTC)
+    authority = CheckoutAuthority(
+        id=uuid4(),
+        tenant_id=data.tenant_a.id,
+        payment_request_id=data.payment_request.id,
+        payment_id=data.payment.id,
+        approval_id=None,
+        policy_version=data.tenant_a_policy.version,
+        snapshot_hash="a" * 64,
+        expires_at=now + timedelta(minutes=15),
+    )
+    session.add(authority)
+    await session.flush()
+    return authority
+
+
 async def _latest_rejection(session: AsyncSession) -> AuditEvent | None:
     return await session.scalar(
         select(AuditEvent)
@@ -145,7 +171,11 @@ async def test_a1_supplied_amount_field_is_refused_at_the_boundary(
     )
 
     after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    rejected_fields = {error["loc"][-1] for error in response.json()["detail"] if error.get("loc")}
     assert response.status_code == 422
+    # Pin which fields were refused. A status-code-only assertion would be satisfied by any
+    # unrelated validation failure introduced later.
+    assert {"amount_minor", "currency"} <= rejected_fields
     assert_attack_created_nothing(before, after)
 
 
@@ -274,25 +304,41 @@ async def test_a11b_razorpay_route_refuses_another_tenants_authority(
     seeded_fixture_data: FixtureData,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Credentials are configured so the refusal comes from the tenant check, not a missing key.
+    """Tenant B attempts to consume a real, valid, unconsumed authority owned by tenant A.
 
-    The authority id is one tenant B does not own. The route must refuse to consume it rather
-    than resolving it from another tenant.
+    An unknown identifier would only prove that unknown identifiers are refused. The authority
+    here genuinely exists and is genuinely consumable by its owner, so the refusal can only come
+    from the tenant filter. Both tenants are snapshotted: tenant B must gain nothing, and tenant
+    A's authority must remain unconsumed and unspent.
     """
 
     monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_public")
     monkeypatch.setenv("RAZORPAY_KEY_SECRET", "test-secret")
-    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_b.id)
+    authority = await _seed_tenant_a_authority(async_session, seeded_fixture_data)
+    victim_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    attacker_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_b.id)
 
     response = await api_client.post(
-        f"/api/v1/razorpay/checkout-authorities/{uuid4()}/orders",
+        f"/api/v1/razorpay/checkout-authorities/{authority.id}/orders",
         headers={"X-Tenant-Id": str(seeded_fixture_data.tenant_b.id)},
     )
 
-    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_b.id)
+    victim_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    attacker_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_b.id)
+    await async_session.refresh(authority)
+    owner_response = await api_client.post(
+        f"/api/v1/razorpay/checkout-authorities/{authority.id}/orders",
+        headers=_headers(seeded_fixture_data),
+    )
+
     assert response.status_code == 409
     assert response.json()["detail"] == "CHECKOUT_AUTHORITY_NOT_FOUND"
-    assert_attack_created_nothing(before, after)
+    # The owner is refused for a different reason, which is what makes the tenant filter the only
+    # possible cause of tenant B's refusal. A shared precondition failure would refuse both alike.
+    assert owner_response.json()["detail"] != "CHECKOUT_AUTHORITY_NOT_FOUND"
+    assert authority.used_at is None
+    assert_attack_created_nothing(attacker_before, attacker_after)
+    assert_attack_created_nothing(victim_before, victim_after)
 
 
 async def test_a11b_mcp_refuses_another_tenants_payment(

@@ -42,6 +42,13 @@ nothing, which is the claim the project actually makes. A response assertion can
 - The first draft of the Razorpay cross-tenant scenario used a route path that does not exist.
   It returned 404 and passed a loose status assertion while proving nothing. Corrected to
   `/api/v1/razorpay/checkout-authorities/{id}/orders` with an exact 409 and reason-code assertion.
+- That corrected scenario then still used a random authority identifier, so it proved only that
+  unknown identifiers are refused rather than that one tenant cannot consume another's authority.
+  It now seeds a genuinely valid, unconsumed tenant A authority, snapshots both tenants, asserts
+  the owner's authority remains unconsumed, and asserts the owner is refused for a *different*
+  reason — which is what makes the tenant filter the only possible cause of tenant B's refusal.
+- The raw amount-field scenario asserted only the 422 status. It now pins which fields were
+  rejected, so an unrelated validation failure introduced later cannot satisfy it.
 - The MCP cross-tenant scenario initially skipped when fixtures provided no tenant B payment. A
   skipped adversarial test would let the published matrix claim coverage that never ran, so the
   scenario now seeds its own tenant B payment.
