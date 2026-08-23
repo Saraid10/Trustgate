@@ -75,4 +75,4 @@ ignore_missing_imports = true
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["api", "models", "schemas", "state_machine", "policy_engine", "mock_provider", "mcp_server", "agent"]
+packages = ["api", "models", "schemas", "state_machine", "policy_engine", "mock_provider", "mcp_server", "agent", "scenarios"]

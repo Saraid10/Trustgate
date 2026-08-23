@@ -290,3 +290,20 @@ regression test now asserts the request carries no sampling parameters. Restrict
 to discrete selections removes the variance that mattered: a differently worded justification is
 not evidence of influence, whereas a changed SKU or quantity is.
 **Slice:** M1 buyer agent and adversarial harness
+
+## 2026-08-24: Adversarial Scenarios Assert What Changed, Not What Was Returned
+**Decision:** Give every Tier A scenario a before-and-after tenant snapshot and require three
+assertions: the rejection with its reason code, that no provider order was created, and that no
+payment gained an authority-bearing state. Raise `ScenarioViolation` from the harness rather than
+using bare `assert`. Generate the published attack matrix from the scenario registry and assert in
+a test that the README matches it.
+**Alternatives considered:** Assert only on the endpoint response as the existing unit tests do;
+use bare assertions in the harness because it is only used by tests; hand-write the attack matrix
+and regenerate it by hand later.
+**Rationale:** A response assertion cannot distinguish "the request was refused" from "the request
+was refused and something was written anyway", which is the claim the project actually makes. The
+harness ships inside the `scenarios` package and `python -O` strips assertions, so an assert-based
+harness would report every scenario as passing under optimisation while verifying nothing; the
+same reasoning already applied to the state machine's approval requirement. A generated matrix
+cannot claim an attack that has no passing test, which a hand-written one silently can.
+**Slice:** M2 early attack proof

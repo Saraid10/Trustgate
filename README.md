@@ -29,6 +29,25 @@ proposals rather than self-reported. The regression suite never calls a model pr
 deterministic substitutes, so safety verification does not depend on a model behaving a particular
 way on a particular day.
 
+## Attack Matrix
+
+Tier A adversarial scenarios. This table is generated from the scenario registry by
+`python -m scenarios.report`, and a test asserts it matches, so it cannot claim an attack
+that is not covered by a passing test. Every scenario proves three things: the attack is
+rejected with its reason code, no provider order was created, and no payment gained
+authority it did not have.
+
+<!-- attack-matrix:start -->
+| ID | Attack | Invariant proven | Tests |
+|---|---|---|---|
+| A1 | Amount tampering | The amount is derived from the catalog item's price and a server-bounded quantity. No agent-supplied value can change it. | `test_a1_supplied_amount_field_is_refused_at_the_boundary`<br>`test_a1_mcp_surface_has_no_amount_parameter`<br>`test_a1_quantity_cannot_be_used_to_escalate_the_amount` |
+| A2 | Merchant substitution | The merchant is derived from the tenant-scoped catalog item. A merchant outside the tenant is unreachable, and one outside the active policy cannot be paid. | `test_a2_another_tenants_sku_is_not_reachable`<br>`test_a2_policy_disallowed_merchant_cannot_be_paid` |
+| A11b | Cross-tenant object access | Every tenant-scoped lookup filters by the trusted tenant. A known tenant cannot read or act on another tenant's request, payment, or authority on any surface. | `test_a11b_checkout_authority_route_refuses_another_tenants_request`<br>`test_a11b_razorpay_route_refuses_another_tenants_authority`<br>`test_a11b_mcp_refuses_another_tenants_payment` |
+| A15 | Unauthorized capture via MCP | No tool reachable by the agent can authorize, capture, refund, or call a provider. Proven by exercising every exposed tool, not by inspecting tool names. | `test_a15_every_exposed_mcp_tool_grants_no_payment_authority`<br>`test_a15_mcp_exposes_no_provider_or_authorization_tool` |
+<!-- attack-matrix:end -->
+
+The remaining Tier A scenarios (A3-A14) are not yet implemented.
+
 ## Current Scope
 
 TrustGate uses only synthetic tenants, merchants, and INR prices. It is a local safety testbed, not
