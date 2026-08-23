@@ -107,9 +107,7 @@ async def test_callback_uses_server_stored_order_and_does_not_transition_payment
         f"/api/v1/razorpay/checkout-authorities/{authority_id}/orders", headers=headers
     )
     payment_id = await async_session.scalar(
-        select(RazorpayOrder.payment_id).where(
-            RazorpayOrder.checkout_authority_id == authority_id
-        )
+        select(RazorpayOrder.payment_id).where(RazorpayOrder.checkout_authority_id == authority_id)
     )
     signature = hmac.new(
         b"test-secret", b"order_test_callback|pay_test_456", hashlib.sha256

@@ -195,9 +195,7 @@ async def verify_callback(
 
     _, key_secret = _credentials()
     order = await session.scalar(
-        select(RazorpayOrder).where(
-            RazorpayOrder.razorpay_order_id == callback.razorpay_order_id
-        )
+        select(RazorpayOrder).where(RazorpayOrder.razorpay_order_id == callback.razorpay_order_id)
     )
     if order is None:
         return JSONResponse(

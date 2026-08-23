@@ -27,6 +27,7 @@ dev = [
     "pre-commit>=3.7,<5.0",
     "pytest>=8.2,<9.0",
     "pytest-asyncio>=0.23,<2.0",
+    "pytest-timeout>=2.4,<3.0",
     "ruff>=0.5,<1.0",
     "testcontainers[postgres]>=4.7,<5.0",
 ]
@@ -47,6 +48,9 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+timeout = "60"
+session_timeout = "300"
+timeout_method = "thread"
 
 [tool.ruff]
 line-length = 100

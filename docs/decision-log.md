@@ -237,3 +237,13 @@ transition the payment from the callback alone.
 The deterministic authority-derived receipt gives the provider a second idempotency boundary. A
 later signed provider webhook remains the authority for payment-state progression.
 **Slice:** Razorpay Test Mode adapter
+
+## 2026-08-23: Local PostgreSQL IPv4 Defaults
+**Decision:** Use `127.0.0.1` rather than `localhost` for host-side PostgreSQL defaults in local
+configuration, test fixtures, API fallback configuration, and Alembic configuration.
+**Alternatives considered:** Retain `localhost` and rely on platform-specific IPv6 fallback.
+**Rationale:** Docker Compose intentionally binds PostgreSQL only to `127.0.0.1`. On the Windows
+development environment, `localhost` resolves to IPv6 first and an async psycopg connection can
+stall instead of reaching the IPv4-only bind. An explicit loopback address makes the clean-clone
+path deterministic while the containers continue to use the internal `postgres` hostname.
+**Slice:** M0 clean-clone reliability

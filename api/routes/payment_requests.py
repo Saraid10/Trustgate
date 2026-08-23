@@ -89,9 +89,7 @@ async def create_payment_request_for_context(
     transaction = session.begin_nested() if session.in_transaction() else session.begin()
     async with transaction:
         idempotency_lock = int.from_bytes(
-            hashlib.sha256(
-                f"{tenant.id}:{request.idempotency_key}".encode()
-            ).digest()[:8],
+            hashlib.sha256(f"{tenant.id}:{request.idempotency_key}".encode()).digest()[:8],
             byteorder="big",
             signed=True,
         )

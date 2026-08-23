@@ -25,7 +25,7 @@ from models.domain import (
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg://payment_safety:payment_safety@localhost:5432/payment_safety",
+    "postgresql+psycopg://payment_safety:payment_safety@127.0.0.1:5432/payment_safety",
 )
 
 

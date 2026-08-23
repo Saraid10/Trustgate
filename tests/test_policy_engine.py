@@ -109,6 +109,7 @@ async def api_client(
     monkeypatch.setenv("DEMO_APPROVER_TOKEN", "test-approver-token")
     monkeypatch.setenv("DEMO_APPROVER_ID", "test-human-reviewer")
     monkeypatch.setenv("ENABLE_LEGACY_PAYMENT_REQUEST_API", "true")
+
     async def override_session() -> AsyncIterator[AsyncSession]:
         yield async_session
 
@@ -320,9 +321,7 @@ async def test_policy_requires_approval_above_its_threshold(
 async def test_policy_enforces_utc_daily_allow_spend(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    await _publish_tenant_a_policy(
-        async_session, seeded_fixture_data, max_daily_spend_minor=15_000
-    )
+    await _publish_tenant_a_policy(async_session, seeded_fixture_data, max_daily_spend_minor=15_000)
     result = await evaluate_payment_request(
         async_session,
         tenant_id=seeded_fixture_data.tenant_a.id,
@@ -338,9 +337,7 @@ async def test_policy_enforces_utc_daily_allow_spend(
 async def test_policy_allows_the_exact_daily_spend_boundary(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    await _publish_tenant_a_policy(
-        async_session, seeded_fixture_data, max_daily_spend_minor=20_000
-    )
+    await _publish_tenant_a_policy(async_session, seeded_fixture_data, max_daily_spend_minor=20_000)
     result = await evaluate_payment_request(
         async_session,
         tenant_id=seeded_fixture_data.tenant_a.id,
@@ -591,9 +588,7 @@ async def test_approval_grant_requires_a_separate_approver_token(
 async def test_approval_required_request_reserves_daily_budget_atomically(
     api_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    await _publish_tenant_a_policy(
-        async_session, seeded_fixture_data, max_daily_spend_minor=60_000
-    )
+    await _publish_tenant_a_policy(async_session, seeded_fixture_data, max_daily_spend_minor=60_000)
     first = await api_client.post(
         "/api/v1/payment-requests",
         json=_payload(seeded_fixture_data, amount_minor=50_001),
@@ -664,7 +659,7 @@ def test_missing_approval_behavior_is_identical_under_python_optimized_mode(
             **os.environ,
             "DATABASE_URL": os.getenv(
                 "DATABASE_URL",
-                "postgresql+psycopg://payment_safety:payment_safety@localhost:5432/payment_safety",
+                "postgresql+psycopg://payment_safety:payment_safety@127.0.0.1:5432/payment_safety",
             ),
         },
     )

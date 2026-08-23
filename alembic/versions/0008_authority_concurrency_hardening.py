@@ -67,7 +67,5 @@ def downgrade() -> None:
     op.drop_constraint(
         "ck_checkout_authority_expiry_after_creation", "checkout_authority", type_="check"
     )
-    op.drop_constraint(
-        "ck_checkout_authority_snapshot_hash", "checkout_authority", type_="check"
-    )
+    op.drop_constraint("ck_checkout_authority_snapshot_hash", "checkout_authority", type_="check")
     op.drop_index("uq_approval_active_per_payment", table_name="approval")

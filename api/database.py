@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg://payment_safety:payment_safety@localhost:5432/payment_safety",
+    "postgresql+psycopg://payment_safety:payment_safety@127.0.0.1:5432/payment_safety",
 )
 
 engine = create_async_engine(DATABASE_URL)

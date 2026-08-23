@@ -110,8 +110,7 @@ async def evaluate_payment_request(
         )
     )
     daily_spend = await session.scalar(
-        select(DailySpendReservation.reserved_amount_minor)
-        .where(
+        select(DailySpendReservation.reserved_amount_minor).where(
             DailySpendReservation.tenant_id == tenant_id,
             DailySpendReservation.actor_id == actor_id,
             DailySpendReservation.spend_date == now.date(),

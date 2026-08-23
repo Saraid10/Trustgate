@@ -399,9 +399,7 @@ class RazorpayOrder(Base):
     __tablename__ = "razorpay_order"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_razorpay_order_tenant"),
-        UniqueConstraint(
-            "tenant_id", "checkout_authority_id", name="uq_razorpay_order_authority"
-        ),
+        UniqueConstraint("tenant_id", "checkout_authority_id", name="uq_razorpay_order_authority"),
         UniqueConstraint("razorpay_order_id", name="uq_razorpay_order_provider_id"),
         ForeignKeyConstraint(
             ["tenant_id", "checkout_authority_id"],

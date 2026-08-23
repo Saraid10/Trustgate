@@ -172,12 +172,7 @@ async def issue_checkout_authority(
             .order_by(SpendingPolicy.version.desc())
             .limit(1)
         )
-        if (
-            payment is None
-            or decision is None
-            or policy is None
-            or payment.state != "AUTHORIZED"
-        ):
+        if payment is None or decision is None or policy is None or payment.state != "AUTHORIZED":
             reason = "CHECKOUT_AUTHORITY_PAYMENT_NOT_AUTHORIZED"
             session.add(
                 AuditEvent(

@@ -20,6 +20,7 @@ async def catalog_client(
     async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[AsyncClient]:
     monkeypatch.setenv("TRUSTGATE_API_ACTOR_ID", "catalog-api-test-actor")
+
     async def override_session() -> AsyncIterator[AsyncSession]:
         yield async_session
 
@@ -155,9 +156,9 @@ async def test_catalog_idempotency_includes_the_original_purpose(
         headers=_headers(seeded_fixture_data),
     )
     audit_count = await async_session.scalar(
-        select(func.count()).select_from(AuditEvent).where(
-            AuditEvent.event_kind == "idempotency_key_collision"
-        )
+        select(func.count())
+        .select_from(AuditEvent)
+        .where(AuditEvent.event_kind == "idempotency_key_collision")
     )
 
     assert first.status_code == 201
