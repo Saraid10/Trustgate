@@ -9,8 +9,8 @@ Verified directly against the gates below:
 
 | Gate | Result |
 |---|---|
-| Full suite | 95 passed |
-| `mypy --strict` | clean, 31 source files |
+| Full suite | 101 passed |
+| `mypy --strict` | clean, 32 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean — missing-approval protection behaves identically under `python -O` |
 | Migration `base` → `head` round trip | clean, all nine revisions reversible |
@@ -18,8 +18,8 @@ Verified directly against the gates below:
 | Slice verification notes | present for slices 1–6 and hardening only |
 
 (`docs/hardening-verification.md` records 22 source files for mypy; the count grew to 25 when the
-catalog, checkout-authority, and Razorpay route modules were added, and to 31 with M1's buyer-agent
-package.)
+catalog, checkout-authority, and Razorpay route modules were added, and to 32 with M1's buyer-agent
+package and optional live-model adapter.)
 
 ---
 

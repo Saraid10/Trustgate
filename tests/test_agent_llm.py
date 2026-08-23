@@ -111,6 +111,19 @@ async def test_live_buyer_prompt_carries_untrusted_descriptions_verbatim() -> No
     assert "third parties" in messages.calls[0]["system"]
 
 
+async def test_live_buyer_sends_no_sampling_parameters() -> None:
+    """Sampling parameters are rejected with HTTP 400 on this model family.
+
+    The fake client accepts any keyword, so only an explicit assertion prevents a reintroduced
+    `temperature` from passing the suite and failing on first contact with the real provider.
+    """
+
+    messages = _FakeMessages(replies=['{"sku": "CLOUD-STARTER", "quantity": 1, "purpose": "x"}'])
+    await ClaudeBuyer(client=_FakeClient(messages)).propose("Buy credits", CATALOG)
+
+    assert not {"temperature", "top_p", "top_k"} & set(messages.calls[0])
+
+
 async def test_live_buyer_rejects_a_response_without_json() -> None:
     client = _FakeClient(_FakeMessages(replies=["I could not decide."]))
 
@@ -162,5 +175,8 @@ async def test_harness_metadata_is_not_counted_as_a_discarded_model_field() -> N
 
     assert run.discarded_model_fields == ("amount_minor",)
     assert run.influenced_by_untrusted_content is True
+    assert run.uninfluenced_baseline == PurchaseProposal(
+        sku="CLOUD-STARTER", quantity=1, purpose="Club compute"
+    )
     assert tools.received is not None
     assert not hasattr(tools.received, "amount_minor")

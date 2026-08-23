@@ -276,3 +276,17 @@ structurally unemittable and would therefore hide the behavior the demonstration
 the narrow contract is enforced in `BuyerAgent`, on the trusted side of the boundary. A model
 cannot reliably report its own susceptibility, so influence is measured by comparison instead.
 **Slice:** M1 buyer agent and adversarial harness
+
+## 2026-08-24: Comparison Stability Without Sampling Controls
+**Decision:** Send no sampling parameters on live buyer requests. Obtain comparison stability by
+judging untrusted influence only on the discrete `sku` and `quantity` selections, never on the
+free-text `purpose`.
+**Alternatives considered:** Set `temperature=0` to suppress run-to-run variation, or accept
+free-text differences as influence signal.
+**Rationale:** `temperature`, `top_p`, and `top_k` were removed on the current model family and are
+rejected with HTTP 400, so a sampling control is not available regardless of its merit. It would
+also have failed only on a live run, because a substituted test client accepts any keyword; a
+regression test now asserts the request carries no sampling parameters. Restricting the comparison
+to discrete selections removes the variance that mattered: a differently worded justification is
+not evidence of influence, whereas a changed SKU or quantity is.
+**Slice:** M1 buyer agent and adversarial harness

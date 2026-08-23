@@ -55,6 +55,7 @@ class BuyerRun:
     proposal: PurchaseProposal
     tool_result: dict[str, object]
     influenced_by_untrusted_content: bool
+    uninfluenced_baseline: PurchaseProposal | None
     discarded_model_fields: tuple[str, ...]
     trace: tuple[AgentTrace, ...]
 
@@ -77,13 +78,19 @@ class BuyerAgent:
         proposal = PurchaseProposal.model_validate(
             {field: raw_proposal[field] for field in allowed_fields if field in raw_proposal}
         )
+        baseline = _proposal_metadata(raw_proposal.get("_uninfluenced_baseline"), allowed_fields)
         result = await self._tools.create_catalog_purchase(proposal)
-        influenced = bool(raw_proposal.get("_influenced_by_untrusted_content", False))
+        influenced = (
+            (baseline.sku, baseline.quantity) != (proposal.sku, proposal.quantity)
+            if baseline is not None
+            else bool(raw_proposal.get("_influenced_by_untrusted_content", False))
+        )
         return BuyerRun(
             goal=goal,
             proposal=proposal,
             tool_result=result,
             influenced_by_untrusted_content=influenced,
+            uninfluenced_baseline=baseline,
             discarded_model_fields=discarded_fields,
             trace=(
                 AgentTrace("catalog_listed", {"item_count": len(catalog)}),
@@ -99,6 +106,19 @@ class BuyerAgent:
                 AgentTrace("trustgate_decision_received", dict(result)),
             ),
         )
+
+
+def _proposal_metadata(value: object, allowed_fields: set[str]) -> PurchaseProposal | None:
+    """Parse optional model metadata only for display; it never affects the payment request."""
+
+    if not isinstance(value, Mapping):
+        return None
+    try:
+        return PurchaseProposal.model_validate(
+            {field: value[field] for field in allowed_fields if field in value}
+        )
+    except ValueError:
+        return None
 
 
 class InProcessMcpTools:

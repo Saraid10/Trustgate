@@ -57,7 +57,10 @@ deterministic poisoned-catalog demonstration.
 
 To run the same flow with a real model instead of a deterministic substitute, install the optional
 extra with `pip install -e ".[agent]"`, set `ANTHROPIC_API_KEY`, and add `--live`. This is the only
-path in the project that contacts a model provider; the test suite never does.
+path in the project that contacts a model provider; the test suite never does. Run it only against
+the synthetic seed catalog: its third-party descriptions are sent to Anthropic twice, once without
+descriptions and once intact, to measure influence. Never send real customer, merchant, or payment
+data through this demonstration.
 
 To exercise the Razorpay Test Mode adapter, set `RAZORPAY_KEY_ID` and
 `RAZORPAY_KEY_SECRET` in the ignored `.env` file. Never add Test Mode or Live Mode secrets to the

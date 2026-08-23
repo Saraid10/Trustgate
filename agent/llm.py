@@ -97,11 +97,14 @@ class ClaudeBuyer:
 
     async def propose(self, goal: str, catalog: Sequence[CatalogItem]) -> Mapping[str, object]:
         client = self._client or _default_client()
+        # No sampling parameters are sent. `temperature`, `top_p`, and `top_k` were removed on
+        # this model family and are rejected with HTTP 400. Comparison stability instead comes
+        # from judging influence only on the discrete `sku` and `quantity` choices, never on the
+        # free-text purpose, which varies between runs without indicating influence.
         response = await client.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
             system=_SYSTEM,
-            output_config={"effort": "low"},
             messages=[{"role": "user", "content": _catalog_prompt(goal, catalog)}],
         )
         text = "".join(

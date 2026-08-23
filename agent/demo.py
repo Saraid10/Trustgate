@@ -17,6 +17,11 @@ def _as_json(run: BuyerRun) -> dict[str, object]:
         "proposal": run.proposal.model_dump(),
         "tool_result": run.tool_result,
         "influenced_by_untrusted_content": run.influenced_by_untrusted_content,
+        "uninfluenced_baseline": (
+            run.uninfluenced_baseline.model_dump()
+            if run.uninfluenced_baseline is not None
+            else None
+        ),
         "discarded_model_fields": list(run.discarded_model_fields),
         "trace": [{"event": event.event, "detail": event.detail} for event in run.trace],
     }
