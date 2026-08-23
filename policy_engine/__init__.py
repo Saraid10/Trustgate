@@ -1,0 +1,1 @@
+"""Deterministic spending-policy decisions."""
