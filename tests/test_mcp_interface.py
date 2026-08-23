@@ -12,6 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from mcp_server.server import create_mcp_server
 from models.domain import Approval, AuditEvent, Payment, PaymentRequest
+from scenarios.tier_a.harness import (
+    assert_attack_created_nothing,
+    assert_attack_gained_no_authority,
+    snapshot_tenant,
+)
 
 McpCall = Callable[[str, dict[str, object]], Awaitable[dict[str, object]]]
 
@@ -171,13 +176,16 @@ async def test_rejected_mcp_approval_request_writes_an_audit_event(
     mcp_call: McpCall, async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
     before = await async_session.scalar(select(func.count()).select_from(AuditEvent))
+    state_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     result = await mcp_call(
         "request_user_approval",
         {"payment_request_id": str(seeded_fixture_data.payment_request.id)},
     )
     after = await async_session.scalar(select(func.count()).select_from(AuditEvent))
+    state_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     assert result == {"ok": False, "reason": "APPROVAL_NOT_REQUIRED"}
     assert after == before + 1
+    assert_attack_gained_no_authority(state_before, state_after)
 
 
 @pytest.mark.asyncio
@@ -206,7 +214,10 @@ async def test_mcp_hides_cross_tenant_payment_and_audits_the_attempt(
     async_session.add(foreign_payment)
     await async_session.flush()
     before = await async_session.scalar(select(func.count()).select_from(AuditEvent))
+    state_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_b.id)
     result = await mcp_call("get_payment_status", {"payment_id": str(foreign_payment.id)})
     after = await async_session.scalar(select(func.count()).select_from(AuditEvent))
+    state_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_b.id)
     assert result == {"found": False, "reason": "CROSS_TENANT_ACCESS_DENIED"}
     assert after == before + 1
+    assert_attack_created_nothing(state_before, state_after)

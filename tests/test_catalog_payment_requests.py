@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.app import app
 from api.database import get_session
 from models.domain import AuditEvent, PaymentRequest
+from scenarios.tier_a.harness import assert_attack_created_nothing, snapshot_tenant
 
 
 @pytest_asyncio.fixture
@@ -78,8 +79,10 @@ async def test_catalog_request_derives_all_payment_facts(
 
 @pytest.mark.asyncio
 async def test_catalog_endpoint_rejects_agent_supplied_payment_facts(
-    catalog_client: AsyncClient, seeded_fixture_data: FixtureData
+    catalog_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
+    state_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
     response = await catalog_client.post(
         "/api/v1/catalog-payment-requests",
         json=_payload(
@@ -91,18 +94,22 @@ async def test_catalog_endpoint_rejects_agent_supplied_payment_facts(
         headers=_headers(seeded_fixture_data),
     )
 
+    state_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     assert response.status_code == 422
+    assert_attack_created_nothing(state_before, state_after)
 
 
 @pytest.mark.asyncio
 async def test_catalog_request_cannot_read_another_tenants_sku(
     catalog_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
+    state_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     response = await catalog_client.post(
         "/api/v1/catalog-payment-requests",
         json=_payload(seeded_fixture_data, sku=seeded_fixture_data.tenant_b_catalog_private.sku),
         headers=_headers(seeded_fixture_data),
     )
+    state_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     audit = await async_session.scalar(
         select(AuditEvent)
         .where(AuditEvent.event_kind == "catalog_purchase_rejected")
@@ -112,17 +119,20 @@ async def test_catalog_request_cannot_read_another_tenants_sku(
     assert response.status_code == 404
     assert response.json()["detail"] == "CATALOG_ITEM_NOT_AVAILABLE"
     assert audit is not None and audit.payload["reason"] == "CATALOG_ITEM_NOT_AVAILABLE"
+    assert_attack_created_nothing(state_before, state_after)
 
 
 @pytest.mark.asyncio
 async def test_catalog_request_enforces_the_server_owned_quantity_limit(
     catalog_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
+    state_before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     response = await catalog_client.post(
         "/api/v1/catalog-payment-requests",
         json=_payload(seeded_fixture_data, quantity=2),
         headers=_headers(seeded_fixture_data),
     )
+    state_after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
     audit = await async_session.scalar(
         select(AuditEvent)
         .where(AuditEvent.event_kind == "catalog_purchase_rejected")
@@ -132,6 +142,7 @@ async def test_catalog_request_enforces_the_server_owned_quantity_limit(
     assert response.status_code == 422
     assert response.json()["detail"] == "QUANTITY_EXCEEDS_LIMIT"
     assert audit is not None and audit.payload["reason"] == "QUANTITY_EXCEEDS_LIMIT"
+    assert_attack_created_nothing(state_before, state_after)
 
 
 @pytest.mark.asyncio
