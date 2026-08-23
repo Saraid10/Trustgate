@@ -129,7 +129,7 @@ can never overstate what has been proven.
 |---|---|---|
 | M0 | Clean-clone reliability and concurrency backfill | Nothing downstream is verifiable until the suite runs anywhere, and four locking claims are currently untested |
 | M1 | The buyer agent and adversarial harness | The AI contribution; also required before any injection attack is realistic |
-| M2 | **Early attack proof** | Proves the thesis before the long build. Needs nothing but existing audit events |
+| M2 | **Early attack proof** — done | Proves the thesis before the long build. Needs nothing but existing audit events |
 | M3 | Finish the Razorpay Test Mode flow | The working end-to-end payment path |
 | M4 | The evidence receipt | The strongest product feature; makes attack output presentable |
 | M5 | Slice 7: complete the Tier A suite | The remaining attacks, now each producing a receipt |
