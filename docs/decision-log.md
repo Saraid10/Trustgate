@@ -247,3 +247,32 @@ development environment, `localhost` resolves to IPv6 first and an async psycopg
 stall instead of reaching the IPv4-only bind. An explicit loopback address makes the clean-clone
 path deterministic while the containers continue to use the internal `postgres` hostname.
 **Slice:** M0 clean-clone reliability
+
+## 2026-08-23: Constrained Buyer Agent and Deterministic Injection Harness
+**Decision:** Keep the M1 buyer agent as a replaceable orchestration layer with exactly two
+capabilities: list the configured tenant's catalog and create a catalog purchase proposal using
+only SKU, quantity, and purpose. Model output fields outside that proposal shape are discarded.
+Use a deterministic instruction-following harness to demonstrate poisoned catalog content rather
+than making the safety proof depend on a particular external LLM's behavior.
+**Alternatives considered:** Give the agent direct payment or provider operations, make the demo
+depend on a live model endpoint, or suppress the adversarial behavior with a more obedient agent.
+**Rationale:** The product claim is that backend authority holds even when an agent is confused or
+influenced by untrusted content. A deterministic harness makes that claim reproducible, while the
+protocol boundary permits a future model provider without changing money authority.
+**Slice:** M1 buyer agent and adversarial harness
+
+## 2026-08-24: Live Model Buyer With Measured Untrusted Influence
+**Decision:** Add an optional live-model buyer used only by `python -m agent.demo --live`, keeping
+the deterministic substitutes as the sole models the regression suite exercises. Do not constrain
+the live model with a strict output schema. Detect untrusted-content influence by proposing twice,
+once against a catalog whose third-party descriptions are removed, and comparing the results.
+**Alternatives considered:** Keep the deterministic harness as the only buyer; make the live model
+the default; constrain its output with a strict schema; or let the model self-report influence.
+**Rationale:** The deterministic harness proves the server holds when a buyer follows hostile text,
+but it cannot evidence the premise that a real reasoning system is swayed by it, because it is a
+parser doing what it was written to do. A live path supplies that evidence while the suite stays
+free of provider dependence and nondeterminism. A strict schema would make an authoritative field
+structurally unemittable and would therefore hide the behavior the demonstration exists to show;
+the narrow contract is enforced in `BuyerAgent`, on the trusted side of the boundary. A model
+cannot reliably report its own susceptibility, so influence is measured by comparison instead.
+**Slice:** M1 buyer agent and adversarial harness

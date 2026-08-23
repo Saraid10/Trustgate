@@ -119,6 +119,8 @@ def create_mcp_server(session_factory: SessionFactory = SessionLocal) -> FastMCP
                         source="MCP_AGENT",
                     )
                 )
+                if "payment_request_id" not in result:
+                    return result
                 payment = await session.scalar(
                     select(Payment).where(
                         Payment.tenant_id == tenant.id,

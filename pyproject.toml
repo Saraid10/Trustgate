@@ -21,6 +21,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The live buyer model is optional. The regression suite never calls a model provider, so the
+# core install stays free of provider dependencies and network access.
+agent = [
+    "anthropic>=0.69",
+]
 dev = [
     "hypothesis>=6.100,<7.0",
     "mypy>=1.10,<2.0",
@@ -41,6 +46,7 @@ include = [
     "policy_engine*",
     "mock_provider*",
     "mcp_server*",
+    "agent*",
     "scenarios*",
     "console*",
 ]
@@ -62,7 +68,11 @@ ignore = [
     "S101",
 ]
 
+[[tool.mypy.overrides]]
+module = "anthropic.*"
+ignore_missing_imports = true
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["api", "models", "schemas", "state_machine", "policy_engine", "mock_provider", "mcp_server"]
+packages = ["api", "models", "schemas", "state_machine", "policy_engine", "mock_provider", "mcp_server", "agent"]

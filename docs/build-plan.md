@@ -2,13 +2,15 @@
 
 The complete phase and slice sequence from the current state to the finished project.
 
-**Status as of 2026-08-23.** Slices 1–6 and the TrustGate authority upgrades are complete.
+**Status as of 2026-08-24.** Slices 1–6, the TrustGate authority upgrades, M0, and M1 are
+complete. M1's focused checks, three real command-line flows, and full regression run are recorded
+in [`docs/m1-verification.md`](m1-verification.md).
 Verified directly against the gates below:
 
 | Gate | Result |
 |---|---|
-| Full suite | 91 passed |
-| `mypy --strict` | clean, 25 source files |
+| Full suite | 95 passed |
+| `mypy --strict` | clean, 31 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean — missing-approval protection behaves identically under `python -O` |
 | Migration `base` → `head` round trip | clean, all nine revisions reversible |
@@ -16,7 +18,8 @@ Verified directly against the gates below:
 | Slice verification notes | present for slices 1–6 and hardening only |
 
 (`docs/hardening-verification.md` records 22 source files for mypy; the count grew to 25 when the
-catalog, checkout-authority, and Razorpay route modules were added.)
+catalog, checkout-authority, and Razorpay route modules were added, and to 31 with M1's buyer-agent
+package.)
 
 ---
 
