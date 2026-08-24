@@ -72,24 +72,43 @@ def _import_anthropic() -> Any:
     return anthropic
 
 
-def _bedrock_client() -> ModelClient:
-    """Build an Amazon Bedrock client.
+def bedrock_base_url(region: str) -> str:
+    return f"https://bedrock-mantle.{region}.api.aws/anthropic"
 
-    Credentials and region resolve through the standard AWS chain: environment variables, then the
-    shared config file, then instance and container roles. No provider key is read here, so the
-    demonstration bills against the AWS account rather than a separate provider balance.
-    """
 
-    anthropic = _import_anthropic()
-    client_class = getattr(anthropic, "AsyncAnthropicBedrockMantle", None)
-    if client_class is None:  # pragma: no cover - depends on the installed SDK version
-        raise RuntimeError(
-            "The installed anthropic SDK has no AsyncAnthropicBedrockMantle client. "
-            "Install the Bedrock extra with: pip install -U 'anthropic[bedrock]'"
-        )
+def _bedrock_region() -> str:
     region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
     if not region:
         raise RuntimeError("AWS_REGION is not configured for the Bedrock live buyer.")
+    return region
+
+
+def _bedrock_client() -> ModelClient:
+    """Build an Amazon Bedrock client, billing against the AWS account rather than a provider key.
+
+    Two credential paths are supported. A Bedrock API key is a bearer token, which the standard
+    client accepts against the Bedrock endpoint and which needs no AWS signing dependency. Absent
+    one, the dedicated client signs with SigV4 using the standard AWS credential chain.
+    """
+
+    # Region is resolved before the optional dependency is imported, so a misconfiguration
+    # reports the missing setting rather than a missing package.
+    region = _bedrock_region()
+    anthropic = _import_anthropic()
+    bearer_token = os.getenv("AWS_BEARER_TOKEN_BEDROCK")
+    if bearer_token:
+        return cast(
+            ModelClient,
+            anthropic.AsyncAnthropic(api_key=bearer_token, base_url=bedrock_base_url(region)),
+        )
+    client_class = getattr(anthropic, "AsyncAnthropicBedrockMantle", None)
+    if client_class is None:  # pragma: no cover - depends on the installed SDK version
+        raise RuntimeError(
+            "No AWS_BEARER_TOKEN_BEDROCK is set and the installed anthropic SDK has no "
+            "AsyncAnthropicBedrockMantle client. Either set a Bedrock API key as "
+            "AWS_BEARER_TOKEN_BEDROCK, or install the signing extra: "
+            "pip install -U 'anthropic[bedrock]'"
+        )
     return cast(ModelClient, client_class(aws_region=region))
 
 

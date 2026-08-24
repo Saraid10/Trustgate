@@ -14,7 +14,13 @@ from typing import Any
 import pytest
 
 from agent.buyer import BuyerAgent, CatalogItem, PurchaseProposal
-from agent.llm import ClaudeBuyer, InfluenceMeasuringBuyer, default_model_id
+from agent.llm import (
+    ClaudeBuyer,
+    InfluenceMeasuringBuyer,
+    _bedrock_client,
+    bedrock_base_url,
+    default_model_id,
+)
 
 CATALOG = [
     CatalogItem(
@@ -255,3 +261,16 @@ async def test_the_resolved_model_id_is_what_reaches_the_provider(
     await ClaudeBuyer(client=_FakeClient(messages)).propose("Buy credits", CATALOG)
 
     assert messages.calls[0]["model"] == "anthropic.claude-haiku-4-5"
+
+
+async def test_bedrock_endpoint_is_region_scoped() -> None:
+    assert bedrock_base_url("us-east-1") == "https://bedrock-mantle.us-east-1.api.aws/anthropic"
+
+
+async def test_bedrock_requires_a_region(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "bedrock")
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+
+    with pytest.raises(RuntimeError, match="AWS_REGION"):
+        _bedrock_client()
