@@ -298,7 +298,7 @@ async def test_groq_buyer_parses_a_proposal_and_sends_the_untrusted_catalog() ->
     captured: list[dict[str, Any]] = []
     buyer = GroqBuyer(
         api_key="test-key",
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         transport=_groq_transport(
             '{"sku": "CLOUD-TEAM", "quantity": 50, "purpose": "Club compute"}', captured
         ),
@@ -308,7 +308,7 @@ async def test_groq_buyer_parses_a_proposal_and_sends_the_untrusted_catalog() ->
 
     assert proposal == {"sku": "CLOUD-TEAM", "quantity": 50, "purpose": "Club compute"}
     assert captured[0]["headers"]["authorization"] == "Bearer test-key"
-    assert captured[0]["body"]["model"] == "llama-3.3-70b-versatile"
+    assert captured[0]["body"]["model"] == "openai/gpt-oss-120b"
     user_message = captured[0]["body"]["messages"][-1]["content"]
     assert "TRUSTGATE_DEMO_INJECTION" in user_message
 
@@ -337,7 +337,7 @@ async def test_groq_backend_default_model_is_a_free_tier_model(
     monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "groq")
     monkeypatch.delenv("TRUSTGATE_MODEL_ID", raising=False)
 
-    assert default_model_id() == "llama-3.3-70b-versatile"
+    assert default_model_id() == "openai/gpt-oss-120b"
 
 
 async def test_live_buyer_factory_selects_groq_when_configured(

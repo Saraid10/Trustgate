@@ -24,8 +24,9 @@ _DEFAULT_MODELS = {
     # SKU from a catalog. Override with TRUSTGATE_MODEL_ID for a stronger model.
     "bedrock": "anthropic.claude-haiku-4-5",
     # Groq's free tier needs no payment instrument, which keeps the live demonstration reachable
-    # without provisioning billing anywhere.
-    "groq": "llama-3.3-70b-versatile",
+    # without provisioning billing anywhere. Groq retires models faster than the other backends;
+    # `GET /openai/v1/models` lists what a key can currently reach.
+    "groq": "openai/gpt-oss-120b",
 }
 
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
@@ -271,7 +272,13 @@ class GroqBuyer:
                 json=payload,
                 headers={"Authorization": f"Bearer {self._resolved_key()}"},
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # `raise_for_status` discards the body, which is where the provider explains
+                # itself. A retired model id returns 404 with a message naming the model, which
+                # is otherwise indistinguishable from a wrong endpoint path.
+                raise RuntimeError(
+                    f"Groq request failed with {response.status_code}: {response.text[:400]}"
+                )
             body = response.json()
         try:
             text = body["choices"][0]["message"]["content"]
