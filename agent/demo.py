@@ -7,7 +7,7 @@ import json
 
 from agent.buyer import BuyerAgent, BuyerRun, InProcessMcpTools
 from agent.models import CatalogHeuristicBuyer, InjectedContentFollower
-from agent.runtime import run_async
+from agent.runtime import load_local_env, run_async
 from mcp_server.server import create_mcp_server
 
 
@@ -36,9 +36,9 @@ def _select_model(*, adversarial: bool, live: bool) -> object:
     """
 
     if live:
-        from agent.llm import ClaudeBuyer, InfluenceMeasuringBuyer
+        from agent.llm import build_live_buyer
 
-        return InfluenceMeasuringBuyer(ClaudeBuyer())
+        return build_live_buyer()
     return InjectedContentFollower() if adversarial else CatalogHeuristicBuyer()
 
 
@@ -50,6 +50,7 @@ async def _run(goal: str, *, adversarial: bool, live: bool) -> BuyerRun:
 
 
 def main() -> None:
+    load_local_env()
     parser = argparse.ArgumentParser(
         description="Propose one catalog purchase through TrustGate MCP."
     )

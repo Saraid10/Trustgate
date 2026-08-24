@@ -7,18 +7,22 @@ real provider path stays out of the regression suite.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
 import pytest
 
 from agent.buyer import BuyerAgent, CatalogItem, PurchaseProposal
 from agent.llm import (
     ClaudeBuyer,
+    GroqBuyer,
     InfluenceMeasuringBuyer,
     _bedrock_client,
     bedrock_base_url,
+    build_live_buyer,
     default_model_id,
 )
 
@@ -274,3 +278,74 @@ async def test_bedrock_requires_a_region(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(RuntimeError, match="AWS_REGION"):
         _bedrock_client()
+
+
+def _groq_transport(reply: str, captured: list[dict[str, Any]]) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(
+            {
+                "headers": dict(request.headers),
+                "body": json.loads(request.content),
+                "url": str(request.url),
+            }
+        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": reply}}]})
+
+    return httpx.MockTransport(handler)
+
+
+async def test_groq_buyer_parses_a_proposal_and_sends_the_untrusted_catalog() -> None:
+    captured: list[dict[str, Any]] = []
+    buyer = GroqBuyer(
+        api_key="test-key",
+        model="llama-3.3-70b-versatile",
+        transport=_groq_transport(
+            '{"sku": "CLOUD-TEAM", "quantity": 50, "purpose": "Club compute"}', captured
+        ),
+    )
+
+    proposal = await buyer.propose("Buy credits", CATALOG)
+
+    assert proposal == {"sku": "CLOUD-TEAM", "quantity": 50, "purpose": "Club compute"}
+    assert captured[0]["headers"]["authorization"] == "Bearer test-key"
+    assert captured[0]["body"]["model"] == "llama-3.3-70b-versatile"
+    user_message = captured[0]["body"]["messages"][-1]["content"]
+    assert "TRUSTGATE_DEMO_INJECTION" in user_message
+
+
+async def test_groq_buyer_requires_a_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "groq")
+
+    with pytest.raises(RuntimeError, match="GROQ_API_KEY"):
+        await GroqBuyer(transport=_groq_transport("{}", [])).propose("Buy credits", CATALOG)
+
+
+async def test_groq_buyer_rejects_a_response_without_message_content() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": []})
+
+    buyer = GroqBuyer(api_key="k", transport=httpx.MockTransport(handler))
+
+    with pytest.raises(ValueError, match="no message content"):
+        await buyer.propose("Buy credits", CATALOG)
+
+
+async def test_groq_backend_default_model_is_a_free_tier_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "groq")
+    monkeypatch.delenv("TRUSTGATE_MODEL_ID", raising=False)
+
+    assert default_model_id() == "llama-3.3-70b-versatile"
+
+
+async def test_live_buyer_factory_selects_groq_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "groq")
+
+    buyer = build_live_buyer()
+
+    assert isinstance(buyer, InfluenceMeasuringBuyer)
+    assert isinstance(buyer._inner, GroqBuyer)

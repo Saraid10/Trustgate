@@ -81,9 +81,14 @@ the same Messages API shape:
 - `TRUSTGATE_MODEL_BACKEND=anthropic` (default) reads `ANTHROPIC_API_KEY`.
 - `TRUSTGATE_MODEL_BACKEND=bedrock` bills against an AWS account. Set `AWS_REGION` to the region
   the credential belongs to, then either `AWS_BEARER_TOKEN_BEDROCK` (a Bedrock API key, the
-  simplest path) or standard AWS credentials for SigV4 signing. It defaults to
-  `anthropic.claude-haiku-4-5`, which is open to all Amazon Bedrock customers; set
-  `TRUSTGATE_MODEL_ID` for a different model.
+  simplest path) or standard AWS credentials for SigV4 signing. Amazon Bedrock provisions
+  Anthropic models through an AWS Marketplace subscription, so the AWS account also needs a valid
+  payment instrument even when credits would cover the usage.
+- `TRUSTGATE_MODEL_BACKEND=groq` reads `GROQ_API_KEY` and needs no payment instrument at all.
+
+`TRUSTGATE_MODEL_ID` overrides the model on any backend. The buyer is a protocol implementation,
+so the provider is a configuration choice rather than an architectural one: the authorization
+layer's behaviour does not depend on which model proposes the purchase.
 
 This is the only path in the project that contacts a model provider; the test suite never does.
 Run it only against the synthetic seed catalog. Its third-party descriptions are sent to the model

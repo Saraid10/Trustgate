@@ -322,3 +322,22 @@ to all Bedrock customers, so it needs no access request; `TRUSTGATE_MODEL_ID` ov
 local or third-party free model remains possible later because `BuyerModel` is a protocol, but a
 frontier model makes the injection result more credible than a small local one.
 **Slice:** M1 buyer agent and adversarial harness
+
+## 2026-08-24: Groq Backend and Load Local Environment in CLI Entry Points
+**Decision:** Add a third live-buyer backend using Groq's free tier over plain HTTP, and load the
+ignored local `.env` from the command-line entry points rather than on library import.
+**Alternatives considered:** Require an Amazon Bedrock payment instrument; add an OpenAI SDK
+dependency for the OpenAI-shaped API; run a local model; keep expecting the shell to export
+configuration.
+**Rationale:** Amazon Bedrock provisions Anthropic models through an AWS Marketplace subscription
+that fails with `INVALID_PAYMENT_INSTRUMENT` until the AWS account has a verified card, which
+blocked the live evidence for reasons unrelated to this project. Groq's free tier removes that
+dependency and needs no card. Its API is OpenAI-shaped and simple enough that `httpx`, already a
+core dependency, is sufficient; adding a provider SDK for one POST would not earn its weight. The
+prompt, the deliberate absence of an output schema, and the JSON extraction are shared across all
+three backends, so only transport differs and the authorization layer is unaffected by the choice.
+Separately, `python-dotenv` was a declared dependency that nothing ever called, so `.env` reached
+only Docker Compose and every host-run command silently ignored it. Loading it from entry points
+without overriding existing variables fixes that while leaving container and CI environments
+authoritative.
+**Slice:** M1 buyer agent and adversarial harness

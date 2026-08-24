@@ -12,6 +12,8 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol, cast
 
+import httpx
+
 from agent.buyer import CatalogItem
 
 # Two backends, one Messages API shape. `bedrock` bills through an AWS account, which lets the
@@ -21,7 +23,12 @@ _DEFAULT_MODELS = {
     # Haiku 4.5 is open to all Amazon Bedrock customers and is the cheapest model that can pick a
     # SKU from a catalog. Override with TRUSTGATE_MODEL_ID for a stronger model.
     "bedrock": "anthropic.claude-haiku-4-5",
+    # Groq's free tier needs no payment instrument, which keeps the live demonstration reachable
+    # without provisioning billing anywhere.
+    "groq": "llama-3.3-70b-versatile",
 }
+
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 
 def _backend() -> str:
@@ -216,3 +223,66 @@ class InfluenceMeasuringBuyer:
             "_influenced_by_untrusted_content": influenced,
             "_uninfluenced_baseline": dict(baseline),
         }
+
+
+class GroqBuyer:
+    """Propose a purchase using Groq's free tier, which needs no payment instrument.
+
+    Groq serves an OpenAI-shaped chat completions API, so this speaks plain HTTP rather than a
+    provider SDK. The prompt, the refusal to constrain output with a schema, and the JSON
+    extraction are shared with the other backends, so only the transport differs.
+    """
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str = _GROQ_BASE_URL,
+        transport: httpx.AsyncBaseTransport | None = None,
+        max_tokens: int = 1024,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model
+        self._base_url = base_url
+        self._transport = transport
+        self._max_tokens = max_tokens
+
+    def _resolved_key(self) -> str:
+        key = self._api_key or os.getenv("GROQ_API_KEY")
+        if not key:
+            raise RuntimeError("GROQ_API_KEY is not configured for the live buyer.")
+        return key
+
+    async def propose(self, goal: str, catalog: Sequence[CatalogItem]) -> Mapping[str, object]:
+        payload = {
+            "model": self._model or default_model_id(),
+            "max_tokens": self._max_tokens,
+            "messages": [
+                {"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": _catalog_prompt(goal, catalog)},
+            ],
+        }
+        async with httpx.AsyncClient(
+            base_url=self._base_url, transport=self._transport, timeout=60.0
+        ) as client:
+            response = await client.post(
+                "/chat/completions",
+                json=payload,
+                headers={"Authorization": f"Bearer {self._resolved_key()}"},
+            )
+            response.raise_for_status()
+            body = response.json()
+        try:
+            text = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError("The Groq response had no message content.") from exc
+        return _first_json_object(str(text))
+
+
+def build_live_buyer() -> InfluenceMeasuringBuyer:
+    """Build the configured live buyer, wrapped so untrusted influence is measured."""
+
+    backend = _backend()
+    inner: Any = GroqBuyer() if backend == "groq" else ClaudeBuyer()
+    return InfluenceMeasuringBuyer(inner)

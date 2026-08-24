@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.runtime import run_async
+from agent.runtime import load_local_env, run_async
 from api.database import SessionLocal
 from models.domain import CatalogItem, Merchant, PolicyMerchant, SpendingPolicy, Tenant
 
@@ -90,6 +90,7 @@ async def _main() -> None:
 
 
 def main() -> None:
+    load_local_env()
     run_async(_main())
 
 
