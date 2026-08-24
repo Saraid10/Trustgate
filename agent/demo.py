@@ -65,8 +65,10 @@ def main() -> None:
         action="store_true",
         help=(
             "Use a real language model as the buyer. Requires the optional 'agent' extra and "
-            "ANTHROPIC_API_KEY. The catalog is sent twice, with and without third-party "
-            "descriptions, so untrusted influence is measured rather than self-reported."
+            "credentials for the configured TRUSTGATE_MODEL_BACKEND: ANTHROPIC_API_KEY for "
+            "'anthropic', GROQ_API_KEY for 'groq', or AWS credentials and AWS_REGION for "
+            "'bedrock'. The catalog is sent twice, with and without third-party descriptions, "
+            "so untrusted influence is measured rather than self-reported."
         ),
     )
     args = parser.parse_args()
