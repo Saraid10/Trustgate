@@ -360,3 +360,19 @@ disclosure in itself.
 request exists to key one on. That absence is the safety property and the audit trail is its
 record; the M2 scenarios that assert nothing was created are exactly these.
 **Slice:** M4 evidence receipt
+
+## 2026-08-25: Request-Scoped Sessions Must Commit Explicitly
+**Decision:** `get_session` commits when a request completes and rolls back when it raises.
+**Alternatives considered:** Commit inside each route; rely on `session.begin()` to commit on exit;
+stop resolving the tenant through the same session.
+**Rationale:** Resolving the trusted tenant queries the database before any route body runs, which
+autobegins a transaction. Every route's `session.begin_nested() if session.in_transaction() else
+session.begin()` therefore took the savepoint branch, and releasing a savepoint does not commit the
+transaction enclosing it. Closing the session then rolled every write back while the route still
+returned its success response: a catalog request returned `201 ALLOW` and persisted nothing.
+Committing per route would repeat the decision in every handler and leave the next one to forget it.
+**Why the suite could not see it:** every other test receives a session already inside an explicit
+transaction and asserts within it, so route writes are visible whether or not they would reach the
+database. `tests/test_session_lifecycle.py` drives the dependency directly against PostgreSQL and
+was confirmed to fail when the defect is reintroduced.
+**Slice:** M3 Razorpay Test Mode flow
