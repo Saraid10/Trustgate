@@ -1,0 +1,241 @@
+"""The evidence receipt: what was proposed, what was authorized, what the provider did.
+
+The separation is the point. A receipt that merged the agent's proposal with the server's derived
+facts would hide exactly the boundary this project exists to demonstrate, so these tests assert
+the stages stay distinguishable and that a denied attempt is evidenced as thoroughly as an
+approved one.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from fixtures import FixtureData
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.app import app
+from api.database import get_session
+from models.domain import CatalogItem, PaymentRequest
+
+
+@pytest_asyncio.fixture
+async def client(
+    async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[AsyncClient]:
+    monkeypatch.setenv("TRUSTGATE_API_ACTOR_ID", "evidence-test-actor")
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        yield async_session
+
+    app.dependency_overrides[get_session] = override_session
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        yield http
+    app.dependency_overrides.clear()
+
+
+def _headers(data: FixtureData) -> dict[str, str]:
+    return {"X-Tenant-Id": str(data.tenant_a.id)}
+
+
+def _purchase(**overrides: object) -> dict[str, object]:
+    return {
+        "sku": "CLOUD-STARTER",
+        "quantity": 1,
+        "purpose": "Provision an isolated build environment.",
+        "idempotency_key": str(uuid4()),
+        **overrides,
+    }
+
+
+async def _create_request(client: AsyncClient, data: FixtureData, **overrides: object) -> str:
+    response = await client.post(
+        "/api/v1/catalog-payment-requests",
+        json=_purchase(**overrides),
+        headers=_headers(data),
+    )
+    assert response.status_code in {200, 201}
+    return str(response.json()["payment_request_id"])
+
+
+async def test_receipt_separates_the_proposal_from_the_server_derived_facts(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    response = await client.get(
+        f"/api/v1/payment-requests/{request_id}/evidence", headers=_headers(seeded_fixture_data)
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    # The agent chose these.
+    assert body["proposed"]["sku"] == "CLOUD-STARTER"
+    assert body["proposed"]["quantity"] == 1
+    assert body["proposed"]["source"] == "API"
+    # The server determined these; none of them appear in the proposal stage.
+    assert body["derived"]["amount_minor"] == 39_900
+    assert body["derived"]["currency"] == "INR"
+    assert body["derived"]["merchant_display_name"] == "A Allowed One"
+    assert set(body["proposed"]) & {"amount_minor", "currency", "merchant_id"} == set()
+
+
+async def test_receipt_records_the_policy_and_decision_that_authorized_the_request(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/evidence",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).json()
+
+    assert body["decision"]["decision"] == "ALLOW"
+    assert body["decision"]["reasons"] == []
+    assert body["policy"]["version"] == body["decision"]["policy_version"]
+    assert body["policy"]["max_amount_minor"] == 100_000
+    assert body["payment"]["state"] == "AUTHORIZED"
+
+
+async def test_a_denied_request_is_evidenced_as_fully_as_an_allowed_one(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Denied attempts are the cases the attack suite must be able to show."""
+
+    async_session.add(
+        CatalogItem(
+            id=uuid4(),
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            merchant_id=seeded_fixture_data.tenant_a_blocked_merchant.id,
+            sku="EVIDENCE-BLOCKED",
+            name="Blocked Merchant Item",
+            description_untrusted="Synthetic item bound to a merchant outside the active policy.",
+            price_minor=10_000,
+            currency="INR",
+            max_quantity=1,
+            active=True,
+        )
+    )
+    await async_session.flush()
+    request_id = await _create_request(client, seeded_fixture_data, sku="EVIDENCE-BLOCKED")
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/evidence",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).json()
+
+    assert body["decision"]["decision"] == "DENY"
+    assert "MERCHANT_NOT_ALLOWED" in body["decision"]["reasons"]
+    assert body["policy"] is not None
+    assert body["derived"]["amount_minor"] == 10_000
+    # Denied means no authority was issued and no provider order exists.
+    assert body["authority"] is None
+    assert body["provider_order"] is None
+    assert body["provider_events"] == []
+
+
+async def test_receipt_reports_no_provider_outcome_before_one_exists(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/evidence",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).json()
+
+    assert body["provider_order"] is None
+    assert body["provider_events"] == []
+    assert body["authority"] is None
+
+
+async def test_another_tenant_cannot_read_the_receipt(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    response = await client.get(
+        f"/api/v1/payment-requests/{request_id}/evidence",
+        headers={"X-Tenant-Id": str(seeded_fixture_data.tenant_b.id)},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "PAYMENT_REQUEST_NOT_FOUND"
+
+
+async def test_a_cross_tenant_read_is_indistinguishable_from_an_unknown_id(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """The response must not confirm that an identifier exists under another tenant."""
+
+    request_id = await _create_request(client, seeded_fixture_data)
+    headers = {"X-Tenant-Id": str(seeded_fixture_data.tenant_b.id)}
+
+    real = await client.get(f"/api/v1/payment-requests/{request_id}/evidence", headers=headers)
+    unknown = await client.get(f"/api/v1/payment-requests/{uuid4()}/evidence", headers=headers)
+
+    assert real.status_code == unknown.status_code
+    assert real.json() == unknown.json()
+
+
+async def test_receipt_carries_the_audit_trail_for_its_decision(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/evidence",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).json()
+
+    correlation = body["decision"]["correlation_id"]
+    assert body["audit_trail"], "decision correlation produced no audit entries"
+    assert all(entry["correlation_id"] == correlation for entry in body["audit_trail"])
+    # Kinds and correlation are exposed; raw payloads are deliberately not.
+    assert all(
+        set(entry) == {"event_kind", "correlation_id", "created_at"}
+        for entry in body["audit_trail"]
+    )
+
+
+async def test_an_unknown_request_is_not_found(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    response = await client.get(
+        f"/api/v1/payment-requests/{uuid4()}/evidence", headers=_headers(seeded_fixture_data)
+    )
+
+    assert response.status_code == 404
+
+
+async def test_a_legacy_request_without_a_catalog_snapshot_still_produces_a_receipt(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Fixture requests predate the catalog path; the receipt must not assume a snapshot."""
+
+    request = await async_session.scalar(
+        select(PaymentRequest).where(PaymentRequest.id == seeded_fixture_data.payment_request.id)
+    )
+    assert request is not None and request.catalog_sku is None
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request.id}/evidence",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).json()
+
+    assert body["proposed"]["sku"] is None
+    assert body["derived"]["amount_minor"] == request.amount_minor

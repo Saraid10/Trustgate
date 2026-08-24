@@ -341,3 +341,22 @@ only Docker Compose and every host-run command silently ignored it. Loading it f
 without overriding existing variables fixes that while leaving container and CI environments
 authoritative.
 **Slice:** M1 buyer agent and adversarial harness
+
+## 2026-08-25: Evidence Receipt Shape and Its Deliberate Absences
+**Decision:** Key the receipt on the payment request rather than the payment, present the proposal
+and the server-derived facts as separate stages, expose audit event kinds and correlation
+identifiers without their payloads, and return the same 404 body for a cross-tenant read as for an
+unknown identifier.
+**Alternatives considered:** Key on the payment; return one flattened record; include raw audit
+payloads; distinguish "belongs to another tenant" from "does not exist".
+**Rationale:** A policy-denied request never produces a payment, and denied attempts are precisely
+what the attack suite needs to evidence, so the payment is the wrong key. Merging the proposal with
+the derived facts would hide the boundary the project exists to demonstrate; keeping them apart is
+what makes the receipt an argument rather than a dump. Audit payloads can carry internal detail
+while the kind and correlation are what make a trail followable. Distinct responses for
+cross-tenant and unknown identifiers would confirm that an identifier exists elsewhere, which is a
+disclosure in itself.
+**Note:** An attack rejected before anything is persisted has no receipt, because no payment
+request exists to key one on. That absence is the safety property and the audit trail is its
+record; the M2 scenarios that assert nothing was created are exactly these.
+**Slice:** M4 evidence receipt
