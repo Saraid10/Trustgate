@@ -307,3 +307,18 @@ harness would report every scenario as passing under optimisation while verifyin
 same reasoning already applied to the state machine's approval requirement. A generated matrix
 cannot claim an attack that has no passing test, which a hand-written one silently can.
 **Slice:** M2 early attack proof
+
+## 2026-08-24: Amazon Bedrock Backend for the Live Buyer
+**Decision:** Support two live-buyer backends behind one switch, `TRUSTGATE_MODEL_BACKEND`. The
+Bedrock backend resolves credentials through the standard AWS chain and defaults to the
+open-access `anthropic.claude-haiku-4-5`; the direct backend keeps reading `ANTHROPIC_API_KEY`.
+**Alternatives considered:** Require a provider API key and treat the live demonstration as
+optional; add a generic OpenAI-compatible adapter for free providers; run a local model.
+**Rationale:** Both backends speak the same Messages API shape, so the switch costs one client
+factory and no change to prompt handling, parsing, or the influence comparison. Billing through an
+existing AWS account removes the only cost barrier to producing the live adversarial evidence,
+which is M1's remaining open item. Haiku is the cheapest model that can select a SKU and is open
+to all Bedrock customers, so it needs no access request; `TRUSTGATE_MODEL_ID` overrides it. A
+local or third-party free model remains possible later because `BuyerModel` is a protocol, but a
+frontier model makes the injection result more credible than a small local one.
+**Slice:** M1 buyer agent and adversarial harness

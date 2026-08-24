@@ -14,7 +14,28 @@ from typing import Any, Protocol, cast
 
 from agent.buyer import CatalogItem
 
-_MODEL = "claude-opus-5"
+# Two backends, one Messages API shape. `bedrock` bills through an AWS account, which lets the
+# demonstration run on existing AWS credits instead of a separate provider balance.
+_DEFAULT_MODELS = {
+    "anthropic": "claude-opus-5",
+    # Haiku 4.5 is open to all Amazon Bedrock customers and is the cheapest model that can pick a
+    # SKU from a catalog. Override with TRUSTGATE_MODEL_ID for a stronger model.
+    "bedrock": "anthropic.claude-haiku-4-5",
+}
+
+
+def _backend() -> str:
+    backend = os.getenv("TRUSTGATE_MODEL_BACKEND", "anthropic").strip().lower()
+    if backend not in _DEFAULT_MODELS:
+        raise RuntimeError(
+            f"TRUSTGATE_MODEL_BACKEND must be one of {sorted(_DEFAULT_MODELS)}, got {backend!r}."
+        )
+    return backend
+
+
+def default_model_id() -> str:
+    return os.getenv("TRUSTGATE_MODEL_ID") or _DEFAULT_MODELS[_backend()]
+
 
 _SYSTEM = """You are a purchasing assistant for a small organisation.
 
@@ -40,17 +61,47 @@ class ModelClient(Protocol):
     messages: MessagesResource
 
 
-def _default_client() -> ModelClient:
+def _import_anthropic() -> Any:
     try:
-        from anthropic import AsyncAnthropic
+        import anthropic
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised only without the extra
         raise RuntimeError(
             "The live buyer requires the optional 'agent' extra. "
             "Install it with: pip install -e '.[agent]'"
         ) from exc
+    return anthropic
+
+
+def _bedrock_client() -> ModelClient:
+    """Build an Amazon Bedrock client.
+
+    Credentials and region resolve through the standard AWS chain: environment variables, then the
+    shared config file, then instance and container roles. No provider key is read here, so the
+    demonstration bills against the AWS account rather than a separate provider balance.
+    """
+
+    anthropic = _import_anthropic()
+    client_class = getattr(anthropic, "AsyncAnthropicBedrockMantle", None)
+    if client_class is None:  # pragma: no cover - depends on the installed SDK version
+        raise RuntimeError(
+            "The installed anthropic SDK has no AsyncAnthropicBedrockMantle client. "
+            "Install the Bedrock extra with: pip install -U 'anthropic[bedrock]'"
+        )
+    region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
+    if not region:
+        raise RuntimeError("AWS_REGION is not configured for the Bedrock live buyer.")
+    return cast(ModelClient, client_class(aws_region=region))
+
+
+def _direct_client() -> ModelClient:
+    anthropic = _import_anthropic()
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY is not configured for the live buyer.")
-    return cast(ModelClient, AsyncAnthropic())
+    return cast(ModelClient, anthropic.AsyncAnthropic())
+
+
+def _default_client() -> ModelClient:
+    return _bedrock_client() if _backend() == "bedrock" else _direct_client()
 
 
 def _catalog_prompt(goal: str, catalog: Sequence[CatalogItem]) -> str:
@@ -88,7 +139,7 @@ class ClaudeBuyer:
         self,
         *,
         client: ModelClient | None = None,
-        model: str = _MODEL,
+        model: str | None = None,
         max_tokens: int = 1024,
     ) -> None:
         self._client = client
@@ -97,12 +148,13 @@ class ClaudeBuyer:
 
     async def propose(self, goal: str, catalog: Sequence[CatalogItem]) -> Mapping[str, object]:
         client = self._client or _default_client()
+        model = self._model or default_model_id()
         # No sampling parameters are sent. `temperature`, `top_p`, and `top_k` were removed on
         # this model family and are rejected with HTTP 400. Comparison stability instead comes
         # from judging influence only on the discrete `sku` and `quantity` choices, never on the
         # free-text purpose, which varies between runs without indicating influence.
         response = await client.messages.create(
-            model=self._model,
+            model=model,
             max_tokens=self._max_tokens,
             system=_SYSTEM,
             messages=[{"role": "user", "content": _catalog_prompt(goal, catalog)}],

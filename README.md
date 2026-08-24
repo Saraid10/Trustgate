@@ -75,11 +75,18 @@ SKU, quantity, and purpose; the MCP server derives all money-critical facts. Use
 deterministic poisoned-catalog demonstration.
 
 To run the same flow with a real model instead of a deterministic substitute, install the optional
-extra with `pip install -e ".[agent]"`, set `ANTHROPIC_API_KEY`, and add `--live`. This is the only
-path in the project that contacts a model provider; the test suite never does. Run it only against
-the synthetic seed catalog: its third-party descriptions are sent to Anthropic twice, once without
-descriptions and once intact, to measure influence. Never send real customer, merchant, or payment
-data through this demonstration.
+extra with `pip install -e ".[agent]"` and add `--live`. Two backends are supported and both use
+the same Messages API shape:
+
+- `TRUSTGATE_MODEL_BACKEND=anthropic` (default) reads `ANTHROPIC_API_KEY`.
+- `TRUSTGATE_MODEL_BACKEND=bedrock` reads standard AWS credentials and `AWS_REGION`, so the
+  demonstration bills against an AWS account. It defaults to `anthropic.claude-haiku-4-5`, which
+  is open to all Amazon Bedrock customers; set `TRUSTGATE_MODEL_ID` for a different model.
+
+This is the only path in the project that contacts a model provider; the test suite never does.
+Run it only against the synthetic seed catalog. Its third-party descriptions are sent to the model
+twice, once with descriptions removed and once intact, to measure influence. Never send real
+customer, merchant, or payment data through this demonstration.
 
 To exercise the Razorpay Test Mode adapter, set `RAZORPAY_KEY_ID` and
 `RAZORPAY_KEY_SECRET` in the ignored `.env` file. Never add Test Mode or Live Mode secrets to the

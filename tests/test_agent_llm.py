@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent.buyer import BuyerAgent, CatalogItem, PurchaseProposal
-from agent.llm import ClaudeBuyer, InfluenceMeasuringBuyer
+from agent.llm import ClaudeBuyer, InfluenceMeasuringBuyer, default_model_id
 
 CATALOG = [
     CatalogItem(
@@ -203,3 +203,55 @@ async def test_newly_attempted_authority_field_is_measured_as_influence() -> Non
     assert tools.received == PurchaseProposal(
         sku="CLOUD-STARTER", quantity=1, purpose="Club compute"
     )
+
+
+async def test_backend_defaults_to_the_direct_provider_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRUSTGATE_MODEL_BACKEND", raising=False)
+    monkeypatch.delenv("TRUSTGATE_MODEL_ID", raising=False)
+
+    assert default_model_id() == "claude-opus-5"
+
+
+async def test_bedrock_backend_selects_an_open_access_bedrock_model_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "bedrock")
+    monkeypatch.delenv("TRUSTGATE_MODEL_ID", raising=False)
+
+    model = default_model_id()
+
+    assert model.startswith("anthropic.")
+
+
+async def test_model_id_can_be_overridden_for_either_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "bedrock")
+    monkeypatch.setenv("TRUSTGATE_MODEL_ID", "anthropic.claude-sonnet-5")
+
+    assert default_model_id() == "anthropic.claude-sonnet-5"
+
+
+async def test_an_unknown_backend_is_rejected_with_the_valid_choices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "openai")
+
+    with pytest.raises(RuntimeError, match="TRUSTGATE_MODEL_BACKEND"):
+        default_model_id()
+
+
+async def test_the_resolved_model_id_is_what_reaches_the_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The backend switch must actually change the request, not only the helper's return value."""
+
+    monkeypatch.setenv("TRUSTGATE_MODEL_BACKEND", "bedrock")
+    monkeypatch.setenv("TRUSTGATE_MODEL_ID", "anthropic.claude-haiku-4-5")
+    messages = _FakeMessages(replies=['{"sku": "CLOUD-STARTER", "quantity": 1, "purpose": "x"}'])
+
+    await ClaudeBuyer(client=_FakeClient(messages)).propose("Buy credits", CATALOG)
+
+    assert messages.calls[0]["model"] == "anthropic.claude-haiku-4-5"

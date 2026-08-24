@@ -24,7 +24,7 @@ dependencies = [
 # The live buyer model is optional. The regression suite never calls a model provider, so the
 # core install stays free of provider dependencies and network access.
 agent = [
-    "anthropic>=0.69",
+    "anthropic[bedrock]>=0.69",
 ]
 dev = [
     "hypothesis>=6.100,<7.0",
