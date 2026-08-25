@@ -15,6 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx
 import pytest
 from fixtures import FixtureData
 from sqlalchemy import select
@@ -30,6 +31,21 @@ from models.domain import (
 )
 
 ORDER_AMOUNT = 39_900
+
+
+# Captured before any patching. The factory below replaces `httpx.AsyncClient`, so calling it by
+# name inside the factory would call the replacement and recurse forever.
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
+
+
+def _client_factory(transport: httpx.AsyncBaseTransport):
+    """Return an AsyncClient factory bound to a mock transport, preserving keyword arguments."""
+
+    def factory(**kwargs: object) -> httpx.AsyncClient:
+        kwargs.pop("transport", None)
+        return _REAL_ASYNC_CLIENT(transport=transport, **kwargs)  # type: ignore[arg-type]
+
+    return factory
 
 
 async def _pending_intent(
@@ -205,3 +221,64 @@ async def test_a_confirmed_row_must_carry_an_order_id(
         await async_session.flush()
 
     assert "ck_razorpay_order_state_matches_identifier" in str(caught.value)
+
+
+async def test_the_receipt_search_paginates_beyond_the_first_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A match outside page one must still be found.
+
+    Treating an older receipt as absent would let a caller create a second provider order for a
+    purchase that already has one.
+    """
+
+    from api.routes import razorpay as route
+
+    pages = [
+        [{"id": f"order_filler{n}", "receipt": "tg_other"} for n in range(100)],
+        [{"id": "order_onpagetwo", "receipt": "tg_deep"}],
+    ]
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        skip = int(request.url.params.get("skip", 0))
+        seen.append(skip)
+        index = skip // 100
+        return httpx.Response(200, json={"items": pages[index] if index < len(pages) else []})
+
+    monkeypatch.setattr(route.httpx, "AsyncClient", _client_factory(httpx.MockTransport(handler)))
+
+    found = await route._find_orders_by_receipt(
+        key_id="rzp_test_public",
+        key_secret="secret",  # noqa: S106
+        receipt="tg_deep",
+    )
+
+    assert found == ["order_onpagetwo"]
+    assert seen == [0, 100], "the search stopped before reaching the second page"
+
+
+async def test_an_incomplete_receipt_search_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Never report 'no match' from a search that did not finish."""
+
+    from api.routes import razorpay as route
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Always a full page, so the search can never conclude.
+        return httpx.Response(
+            200,
+            json={"items": [{"id": f"order_{n}", "receipt": "tg_other"} for n in range(100)]},
+        )
+
+    monkeypatch.setattr(route.httpx, "AsyncClient", _client_factory(httpx.MockTransport(handler)))
+
+    with pytest.raises(Exception) as caught:
+        await route._find_orders_by_receipt(
+            key_id="rzp_test_public",
+            key_secret="secret",  # noqa: S106
+            receipt="tg_never_found",
+        )
+
+    assert "RAZORPAY_RECEIPT_SEARCH_INCOMPLETE" in str(caught.value)

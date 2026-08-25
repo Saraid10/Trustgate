@@ -357,3 +357,97 @@ async def test_policy_publication_lock_forces_authority_issuance_to_recheck_poli
         release_publisher.set()
         await _cleanup(sessions, data.tenant_id)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_pending_intent_race_creates_only_one_provider_order() -> None:
+    """Two retries of one pending intent must not both create a provider order.
+
+    Recovery reconciles against the provider and then may create. Without a lock across that whole
+    sequence, both callers see no matching order and both create one, which is precisely the
+    duplicate charge the authority mechanism exists to prevent. The provider is stubbed to report
+    no existing order, so only the lock can prevent the second creation.
+    """
+
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    data = await _seed(sessions, state="AUTHORIZED")
+    authority_id = uuid4()
+    receipt = f"tg_race_{uuid4().hex[:12]}"
+    created: list[str] = []
+
+    async with sessions() as session:
+        request = await session.scalar(
+            select(PaymentRequest).where(PaymentRequest.id == data.request_id)
+        )
+        assert request is not None
+        session.add(
+            CheckoutAuthority(
+                id=authority_id,
+                tenant_id=data.tenant_id,
+                payment_request_id=data.request_id,
+                payment_id=data.payment_id,
+                approval_id=None,
+                policy_version=1,
+                snapshot_hash=_snapshot_hash(request, 1),
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+                used_at=datetime.now(UTC),
+            )
+        )
+        session.add(
+            RazorpayOrder(
+                id=uuid4(),
+                tenant_id=data.tenant_id,
+                checkout_authority_id=authority_id,
+                payment_id=data.payment_id,
+                razorpay_order_id=None,
+                provider_state="PENDING",
+                receipt=receipt,
+                amount_minor=request.amount_minor,
+                currency=request.currency,
+            )
+        )
+        await session.commit()
+
+    async def claim(session: AsyncSession) -> str | None:
+        """Mirror the recovery branch: lock, reconcile, then create if nothing exists."""
+
+        intent = await session.scalar(
+            select(RazorpayOrder)
+            .where(
+                RazorpayOrder.tenant_id == data.tenant_id,
+                RazorpayOrder.checkout_authority_id == authority_id,
+            )
+            .with_for_update()
+        )
+        assert intent is not None
+        if intent.provider_state == "CONFIRMED":
+            return None
+        # The provider reports no order for this receipt, so a caller that reaches here creates one.
+        order_id = f"order_{uuid4().hex[:14]}"
+        created.append(order_id)
+        intent.razorpay_order_id = order_id
+        intent.provider_state = "CONFIRMED"
+        await session.commit()
+        return order_id
+
+    try:
+        results = await _race(sessions, claim)
+        assert sum(not isinstance(result, Exception) for result in results) == 2
+        assert len(created) == 1, f"both callers created an order: {created}"
+        async with sessions() as session:
+            rows = list(
+                await session.scalars(
+                    select(RazorpayOrder).where(RazorpayOrder.tenant_id == data.tenant_id)
+                )
+            )
+        assert len(rows) == 1
+        assert rows[0].provider_state == "CONFIRMED"
+    finally:
+        async with sessions() as session:
+            await session.execute(
+                delete(RazorpayOrder).where(RazorpayOrder.tenant_id == data.tenant_id)
+            )
+            await session.commit()
+        await _cleanup(sessions, data.tenant_id)
+        await engine.dispose()

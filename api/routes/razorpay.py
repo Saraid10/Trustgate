@@ -43,6 +43,10 @@ from state_machine.transitions import StateMachineError, transition
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/razorpay", tags=["razorpay test mode"])
 _ORDERS_URL = "https://api.razorpay.com/v1/orders"
+# Razorpay caps a page at 100. The page cap bounds a reconciliation against a long order
+# history; exceeding it fails closed rather than reporting a receipt as absent.
+_RECEIPT_SEARCH_PAGE_SIZE = 100
+_RECEIPT_SEARCH_MAX_PAGES = 20
 
 
 def _credentials() -> tuple[str, str]:
@@ -134,34 +138,50 @@ async def _find_orders_by_receipt(*, key_id: str, key_secret: str, receipt: str)
     """
 
     list_url = os.getenv("RAZORPAY_ORDERS_URL", _ORDERS_URL)
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(list_url, auth=(key_id, key_secret), params={"count": 100})
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_NETWORK_ERROR"
-        ) from exc
-    if response.status_code >= 400:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
-        )
-    try:
-        items = response.json().get("items", [])
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
-        ) from exc
-    if not isinstance(items, list):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
-        )
-    return [
-        item["id"]
-        for item in items
-        if isinstance(item, dict)
-        and item.get("receipt") == receipt
-        and isinstance(item.get("id"), str)
-    ]
+    matches: list[str] = []
+    skip = 0
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for _ in range(_RECEIPT_SEARCH_MAX_PAGES):
+            try:
+                response = await client.get(
+                    list_url,
+                    auth=(key_id, key_secret),
+                    params={"count": _RECEIPT_SEARCH_PAGE_SIZE, "skip": skip},
+                )
+            except httpx.HTTPError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_NETWORK_ERROR"
+                ) from exc
+            if response.status_code >= 400:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
+                )
+            try:
+                items = response.json().get("items", [])
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
+                ) from exc
+            if not isinstance(items, list):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
+                )
+            matches.extend(
+                item["id"]
+                for item in items
+                if isinstance(item, dict)
+                and item.get("receipt") == receipt
+                and isinstance(item.get("id"), str)
+            )
+            if len(items) < _RECEIPT_SEARCH_PAGE_SIZE:
+                return matches
+            skip += _RECEIPT_SEARCH_PAGE_SIZE
+    # The search did not reach the end of the order history. Reporting "no match" here would let a
+    # caller create a second order for a receipt that already has one further back, so the
+    # incomplete search fails closed instead.
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT, detail="RAZORPAY_RECEIPT_SEARCH_INCOMPLETE"
+    )
 
 
 async def _reconcile_intent(
@@ -226,11 +246,17 @@ async def create_order(
 
     key_id, key_secret = _credentials()
     correlation_id = uuid4()
+    # Locked for the whole reconcile-then-create sequence. Two concurrent retries of a pending
+    # intent would otherwise both find no matching provider order and both create one, producing
+    # exactly the duplicate this recovery path exists to avoid. The lock is held across the
+    # provider call, so the second caller waits and then observes the confirmed row.
     existing = await session.scalar(
-        select(RazorpayOrder).where(
+        select(RazorpayOrder)
+        .where(
             RazorpayOrder.tenant_id == tenant.id,
             RazorpayOrder.checkout_authority_id == checkout_authority_id,
         )
+        .with_for_update()
     )
     if existing is not None:
         if existing.provider_state == "CONFIRMED":
@@ -489,7 +515,7 @@ async def receive_razorpay_webhook(
     if len(raw_body) > _MAX_WEBHOOK_BODY_BYTES:
         _log_unattributed_webhook_rejection(request, raw_body, "RAZORPAY_WEBHOOK_BODY_TOO_LARGE")
         return JSONResponse(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             content={"detail": "RAZORPAY_WEBHOOK_BODY_TOO_LARGE"},
         )
     signature = request.headers.get("X-Razorpay-Signature", "")

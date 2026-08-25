@@ -202,7 +202,9 @@ async def test_receipt_carries_the_audit_trail_for_its_decision(
 
     correlation = body["decision"]["correlation_id"]
     assert body["audit_trail"], "decision correlation produced no audit entries"
-    assert all(entry["correlation_id"] == correlation for entry in body["audit_trail"])
+    # The decision's own entries are present. Later lifecycle steps run under their own
+    # correlations and are gathered by identifier, so the trail is not limited to this one.
+    assert any(entry["correlation_id"] == correlation for entry in body["audit_trail"])
     # Kinds and correlation are exposed; raw payloads are deliberately not.
     assert all(
         set(entry) == {"event_kind", "correlation_id", "created_at"}
@@ -364,3 +366,45 @@ async def test_the_receipt_does_not_double_escape_its_own_markup(
     assert "&amp;middot;" not in body
     assert "&amp;mdash;" not in body
     assert "&amp;#8377;" not in body
+
+
+async def test_the_trail_follows_the_purchase_past_its_authorization(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Later lifecycle steps run under their own correlation and must still appear.
+
+    Gathering by the decision's correlation alone produced a receipt that stopped at the
+    authorization and omitted the authority, provider, and webhook history it exists to evidence.
+    """
+
+    request_id = await _create_request(client, seeded_fixture_data)
+    authority = await client.post(
+        f"/api/v1/checkout-authorities/{request_id}", headers=_headers(seeded_fixture_data)
+    )
+    assert authority.status_code == 200, authority.text
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/evidence",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).json()
+
+    kinds = {entry["event_kind"] for entry in body["audit_trail"]}
+    correlations = {entry["correlation_id"] for entry in body["audit_trail"]}
+    assert "checkout_authority_issued" in kinds, f"trail stopped early: {sorted(kinds)}"
+    assert len(correlations) > 1, "the trail covers only one correlation"
+
+
+async def test_the_trail_does_not_pull_in_another_purchase(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """Widening the gather must not make receipts bleed into each other."""
+
+    first = await _create_request(client, seeded_fixture_data)
+    second = await _create_request(client, seeded_fixture_data)
+    headers = _headers(seeded_fixture_data)
+
+    body = (await client.get(f"/api/v1/payment-requests/{first}/evidence", headers=headers)).json()
+
+    assert second not in str(body["audit_trail"])

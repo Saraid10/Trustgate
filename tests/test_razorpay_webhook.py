@@ -414,3 +414,73 @@ async def test_the_provider_event_header_identity_is_preferred_when_present(
     assert first.status_code == 202
     assert second.status_code == 409
     assert stored == "razorpay:evt_stable_across_retries"
+
+
+async def test_an_early_capture_is_refused_and_succeeds_once_authorization_arrives(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """Razorpay does not guarantee delivery order, and this system relies on its retries.
+
+    A capture arriving before its authorization is refused with a conflict rather than applied out
+    of order. Razorpay redelivers anything it does not consider delivered, so the same event
+    succeeds once the predecessor lands. This test pins that recovery path, because relying on
+    retry behaviour is only sound if the retry actually works.
+    """
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    captured = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.captured")
+    authorized = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.authorized")
+
+    early = await _post(client, captured, _sign(captured))
+    state_after_early = await async_session.scalar(
+        select(Payment.state).where(Payment.id == order.payment_id)
+    )
+
+    accepted = await _post(client, authorized, _sign(authorized))
+    redelivered = await _post(client, captured, _sign(captured))
+    final = await async_session.scalar(select(Payment).where(Payment.id == order.payment_id))
+
+    assert early.status_code == 409, "an out-of-order capture must not be applied"
+    assert state_after_early == "AUTHORIZED", "the early capture changed state"
+    assert accepted.status_code == 202
+    assert redelivered.status_code == 202, f"the retry did not recover: {redelivered.json()}"
+    assert final is not None and final.state == "CAPTURED"
+    assert final.captured_amount_minor == ORDER_AMOUNT
+
+
+async def test_one_payment_with_distinct_event_ids_is_processed_twice(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """Distinct provider event ids on one payment are distinct events, not a replay."""
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    steps = [
+        ("payment.authorized", "evt_authorized_001", "PROVIDER_PENDING"),
+        ("payment.captured", "evt_captured_002", "CAPTURED"),
+    ]
+
+    for event, event_id, expected_state in steps:
+        body = _body_for_payment(order.razorpay_order_id, payment_id, event=event)
+        response = await client.post(
+            "/api/v1/razorpay/webhook",
+            content=body,
+            headers={
+                "X-Razorpay-Signature": _sign(body),
+                "X-Razorpay-Event-Id": event_id,
+                "Content-Type": "application/json",
+            },
+        )
+        state = await async_session.scalar(
+            select(Payment.state).where(Payment.id == order.payment_id)
+        )
+        assert response.status_code == 202, f"{event} rejected: {response.json()}"
+        assert state == expected_state
+
+    stored = list(
+        await async_session.scalars(
+            select(ProviderEvent.provider_event_id).where(
+                ProviderEvent.payment_id == order.payment_id
+            )
+        )
+    )
+    assert sorted(stored) == ["razorpay:evt_authorized_001", "razorpay:evt_captured_002"]

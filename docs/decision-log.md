@@ -499,3 +499,41 @@ same payment are both accepted in order.
 **Note:** deduplication is defence in depth. The state machine independently refuses a repeated
 transition, so a missed duplicate cannot advance a payment twice.
 **Slice:** M3 Razorpay Test Mode flow
+
+## 2026-08-26: Duplicate Prevention Under Concurrency, Pagination, and Ordering
+**Decision:** Lock the pending provider-order intent with `FOR UPDATE` across the whole
+reconcile-then-create sequence. Paginate the receipt search and fail closed with
+`RAZORPAY_RECEIPT_SEARCH_INCOMPLETE` when it cannot reach the end of the order history. Refuse an
+out-of-order provider event and rely on provider redelivery, with a test proving the retry
+recovers.
+**Alternatives considered:** Rely on the unique constraint alone for concurrency; read only the
+first page of orders; buffer out-of-order events and replay them once predecessors arrive.
+**Rationale:** Two retries of one pending intent both found no matching provider order and both
+created one, because nothing serialised them. The unique constraint on `(tenant_id,
+checkout_authority_id)` cannot help: both callers operate on the same existing row. The lock is
+held across the provider call so the second caller waits and then observes the confirmed row.
+
+Reading one page treated a matching receipt further back in history as absent, which would license
+creating a second order for a purchase that already has one. An incomplete search now refuses
+rather than reporting absence, because "not found in the part I looked at" is not "not found".
+
+Buffering out-of-order events would add a queue and a replay path to solve a problem the provider
+already solves by redelivering. Refusing is sound only if the retry works, so that path is tested
+rather than assumed. It depends on a detail worth stating: the provider event row is written inside
+the same nested transaction as the transition, so a refused event leaves no deduplication entry and
+its redelivery is processed rather than dismissed as a replay.
+**Slice:** M3 hardening after external review
+
+## 2026-08-26: Evidence Follows the Purchase, Not One Correlation
+**Decision:** Gather a receipt's audit trail by the identifiers naming the purchase - request,
+payment, authority, and provider order - in addition to the authorization decision's correlation.
+**Alternatives considered:** Keep gathering by the decision's correlation; thread one correlation
+through the entire lifecycle.
+**Rationale:** Issuing and consuming an authority, creating a provider order, and verifying a
+callback or webhook each run under their own correlation, so gathering by the decision's
+correlation produced a receipt that stopped at authorization and omitted the lifecycle it exists to
+evidence. Against real data the trail grew from one entry to nine across six correlations. Threading
+a single correlation through every step would tie together work that legitimately happens in
+separate requests, days apart, and would lose the ability to trace one request's handling. A test
+asserts a second purchase's identifiers never appear in the first purchase's trail.
+**Slice:** M4 evidence receipt hardening after external review
