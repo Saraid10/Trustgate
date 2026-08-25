@@ -462,3 +462,19 @@ created, so the browser cannot alter it.
 handler posts to the server for signature verification and reports only what the server concludes,
 and capture still waits on a signed provider event.
 **Slice:** M3 Razorpay Test Mode flow
+
+## 2026-08-25: One Evidence Assembly, Two Renderings
+**Decision:** Extract `build_payment_request_evidence` and have both the JSON endpoint and the HTML
+receipt call it. The receipt renderer is a pure function of the assembled record: it queries
+nothing and decides nothing.
+**Alternatives considered:** Assemble the receipt separately with its own queries; render HTML by
+transforming the JSON response in a client; use content negotiation on one route.
+**Rationale:** Two assemblies would drift, and an evidence artifact that disagrees with itself is
+worse than none. A test asserts the receipt contains the SKU, decision, merchant, and order
+reference the JSON reports.
+**On layout:** the three stages stay visually apart because the separation is the argument. A
+reader can see that price and merchant were never the agent's to choose; merging them into one
+summary would hide the property the project exists to demonstrate. A test pins the ordering.
+**Language:** the receipt says tamper-evident and states plainly that it is not a signed or legally
+non-repudiable record, and a test pins that wording so it cannot quietly inflate.
+**Slice:** M4 evidence receipt

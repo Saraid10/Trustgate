@@ -239,3 +239,128 @@ async def test_a_legacy_request_without_a_catalog_snapshot_still_produces_a_rece
 
     assert body["proposed"]["sku"] is None
     assert body["derived"]["amount_minor"] == request.amount_minor
+
+
+async def test_the_receipt_renders_the_three_stages_separately(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """Keeping the stages apart is what makes the authority boundary legible."""
+
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    response = await client.get(
+        f"/api/v1/payment-requests/{request_id}/receipt", headers=_headers(seeded_fixture_data)
+    )
+    body = response.text
+
+    assert response.status_code == 200
+    assert "Chosen by the buying agent" in body
+    assert "Determined by TrustGate" in body
+    assert "What Razorpay actually did" in body
+    # The agent's choices and the server's derivation both appear, in that order.
+    assert body.index("Chosen by the buying agent") < body.index("Determined by TrustGate")
+
+
+async def test_the_receipt_and_the_json_cannot_disagree(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """Both renderings come from one assembly, so the facts must match."""
+
+    request_id = await _create_request(client, seeded_fixture_data)
+    headers = _headers(seeded_fixture_data)
+
+    data = (
+        await client.get(f"/api/v1/payment-requests/{request_id}/evidence", headers=headers)
+    ).json()
+    receipt = (
+        await client.get(f"/api/v1/payment-requests/{request_id}/receipt", headers=headers)
+    ).text
+
+    assert data["proposed"]["sku"] in receipt
+    assert data["decision"]["decision"] in receipt
+    assert data["derived"]["merchant_display_name"] in receipt
+    assert data["derived"]["order_ref"] in receipt
+    # 39900 minor units must appear as currency, not as a raw integer.
+    assert "399.00" in receipt
+
+
+async def test_a_denied_request_receipt_says_nothing_reached_the_provider(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    async_session.add(
+        CatalogItem(
+            id=uuid4(),
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            merchant_id=seeded_fixture_data.tenant_a_blocked_merchant.id,
+            sku="RECEIPT-BLOCKED",
+            name="Blocked Merchant Item",
+            description_untrusted="Synthetic item bound to a merchant outside the active policy.",
+            price_minor=10_000,
+            currency="INR",
+            max_quantity=1,
+            active=True,
+        )
+    )
+    await async_session.flush()
+    request_id = await _create_request(client, seeded_fixture_data, sku="RECEIPT-BLOCKED")
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/receipt",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).text
+
+    assert "DENY" in body
+    assert "MERCHANT_NOT_ALLOWED" in body
+    assert "Nothing reached Razorpay" in body
+
+
+async def test_the_receipt_does_not_overclaim_what_it_is(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """Language discipline: tamper-evident, never non-repudiable."""
+
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/receipt",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).text
+
+    assert "Tamper-evident" in body
+    assert "not a signed or legally non-repudiable record" in body
+
+
+async def test_another_tenant_cannot_read_the_receipt_either(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    response = await client.get(
+        f"/api/v1/payment-requests/{request_id}/receipt",
+        headers={"X-Tenant-Id": str(seeded_fixture_data.tenant_b.id)},
+    )
+
+    assert response.status_code == 404
+
+
+async def test_the_receipt_does_not_double_escape_its_own_markup(
+    client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """Escaping a heading that already held an entity once produced a visible `&amp;middot;`."""
+
+    request_id = await _create_request(client, seeded_fixture_data)
+
+    body = (
+        await client.get(
+            f"/api/v1/payment-requests/{request_id}/receipt",
+            headers=_headers(seeded_fixture_data),
+        )
+    ).text
+
+    assert "&amp;middot;" not in body
+    assert "&amp;mdash;" not in body
+    assert "&amp;#8377;" not in body

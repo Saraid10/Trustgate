@@ -20,11 +20,13 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_session
 from api.dependencies import require_tenant
+from api.receipt import render_receipt
 from models.domain import (
     Approval,
     AuditEvent,
@@ -54,13 +56,14 @@ from schemas.domain import (
 router = APIRouter(prefix="/api/v1/payment-requests", tags=["evidence"])
 
 
-@router.get("/{payment_request_id}/evidence", response_model=PaymentRequestEvidence)
-async def read_payment_request_evidence(
-    payment_request_id: UUID,
-    tenant: Annotated[Tenant, Depends(require_tenant)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+async def build_payment_request_evidence(
+    session: AsyncSession, *, tenant: Tenant, payment_request_id: UUID
 ) -> PaymentRequestEvidence:
-    """Return what was proposed, what was authorized, and what the provider did."""
+    """Assemble the evidence record once, so every rendering shows the same facts.
+
+    The JSON endpoint and the HTML receipt both call this. Assembling separately for each would let
+    the two drift, and an evidence artifact that disagrees with itself is worse than none.
+    """
 
     request = await session.scalar(
         select(PaymentRequest).where(
@@ -259,3 +262,34 @@ async def read_payment_request_evidence(
             for event in audit_events
         ],
     )
+
+
+@router.get("/{payment_request_id}/evidence", response_model=PaymentRequestEvidence)
+async def read_payment_request_evidence(
+    payment_request_id: UUID,
+    tenant: Annotated[Tenant, Depends(require_tenant)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PaymentRequestEvidence:
+    """Return what was proposed, what was authorized, and what the provider did."""
+
+    return await build_payment_request_evidence(
+        session, tenant=tenant, payment_request_id=payment_request_id
+    )
+
+
+@router.get("/{payment_request_id}/receipt", response_class=HTMLResponse)
+async def read_payment_request_receipt(
+    payment_request_id: UUID,
+    tenant: Annotated[Tenant, Depends(require_tenant)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> HTMLResponse:
+    """Render the same evidence as a readable receipt.
+
+    This is a rendering of the JSON record, not a second assembly of it, so the two cannot disagree
+    about what happened.
+    """
+
+    evidence = await build_payment_request_evidence(
+        session, tenant=tenant, payment_request_id=payment_request_id
+    )
+    return HTMLResponse(content=render_receipt(evidence))
