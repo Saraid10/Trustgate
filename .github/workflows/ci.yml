@@ -4,9 +4,32 @@ on:
   push:
   pull_request:
 
+env:
+  # Matches the credentials in docker-compose.yml so local and CI runs agree.
+  DATABASE_URL: postgresql+psycopg://payment_safety:payment_safety@127.0.0.1:5432/payment_safety
+
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # The suite verifies invariants that only exist in the database: composite foreign keys,
+    # partial unique indexes, CHECK constraints, an immutability trigger, and row locks under
+    # real concurrency. Substituting SQLite would silently skip the enforcement layer this
+    # project argues for, so CI runs the same Postgres major version as the compose file.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: payment_safety
+          POSTGRES_USER: payment_safety
+          POSTGRES_PASSWORD: payment_safety
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U payment_safety -d payment_safety"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4
@@ -14,6 +37,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install dependencies
         run: |
@@ -21,10 +45,25 @@ jobs:
           python -m pip install -e ".[dev]"
 
       - name: Ruff
-        run: ruff check .
+        run: |
+          ruff check .
+          ruff format --check .
 
       - name: Mypy
-        run: mypy api models schemas state_machine policy_engine mock_provider mcp_server
+        run: mypy
+
+      - name: Migrate
+        run: python -m alembic upgrade head
+
+      - name: Verify migrations describe the models
+        # Fails if a model changed without a migration, which would otherwise surface as a
+        # confusing runtime error long after the change that caused it.
+        run: python -m alembic check
 
       - name: Tests
-        run: pytest -v
+        run: pytest -q
+
+      - name: Mutation suite
+        # Breaks each safety invariant on purpose and requires its guarding tests to fail. A
+        # green suite that would stay green with the guards removed is the failure this catches.
+        run: python -m scenarios.mutation
