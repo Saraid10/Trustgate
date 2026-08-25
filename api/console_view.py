@@ -1,0 +1,250 @@
+"""Render a tenant's purchase attempts as one reviewable timeline.
+
+The receipt answers "what happened to this purchase". This answers the question a viewer actually
+arrives with: "what has this agent been trying, and did the system hold". Those need different
+shapes. A receipt is deep and singular; a timeline is shallow and comparative, and the comparison
+is the point - a safe purchase, an approval-gated one, and a refused attack sitting in one column
+so the difference between them is visible without reading three pages.
+
+This deliberately does not re-render the three stages. `api.receipt.render_receipt` already lays
+out proposed against derived against provider outcome, and a second renderer assembling the same
+facts could disagree with the first. The timeline links to that receipt instead.
+
+Like the receipt, this is a pure function of data it is handed. It queries nothing, so the console
+cannot show a state the evidence record would contradict.
+"""
+
+from __future__ import annotations
+
+import html
+from dataclasses import dataclass
+from datetime import datetime
+from uuid import UUID
+
+# A decision's tone is its own, but an outcome can override it. A request that was allowed and then
+# refused by the provider is not a green row, and colouring it by the decision alone would tell a
+# viewer the opposite of what happened.
+_DECISION_TONE = {"ALLOW": "ok", "REQUIRE_APPROVAL": "warn", "DENY": "bad"}
+
+
+@dataclass(frozen=True)
+class ConsoleEntry:
+    """One purchase attempt, flattened to what a reviewer needs at a glance.
+
+    A view model rather than a wire contract, so it lives here instead of in `schemas.domain`.
+    Nothing serialises it; the only consumer is the renderer below.
+    """
+
+    payment_request_id: UUID
+    requested_at: datetime
+    actor_id: str
+    source: str
+    sku: str | None
+    quantity: int | None
+    purpose: str | None
+    merchant_display_name: str | None
+    amount_minor: int
+    currency: str
+    decision: str | None
+    reasons: tuple[str, ...]
+    approval_granted_by: str | None
+    payment_state: str | None
+    provider_order_id: str | None
+    provider_state: str | None
+
+    @property
+    def reached_provider(self) -> bool:
+        """Whether anything about this attempt was ever sent to Razorpay.
+
+        The most important fact on a refused row, and the one a viewer is least likely to take on
+        trust. A rejection that still created a provider order would not be a rejection.
+        """
+
+        return self.provider_order_id is not None
+
+    @property
+    def tone(self) -> str:
+        if self.decision is None:
+            return ""
+        if self.decision == "REQUIRE_APPROVAL" and self.payment_state in {
+            "CAPTURED",
+            "PROVIDER_PENDING",
+        }:
+            return "ok"
+        return _DECISION_TONE.get(self.decision, "")
+
+
+def _money(amount_minor: int, currency: str) -> str:
+    symbol = "₹" if currency == "INR" else ""
+    return f"{symbol}{amount_minor / 100:,.2f}"
+
+
+def _text(value: object) -> str:
+    if value is None:
+        return "&mdash;"
+    return html.escape(str(value))
+
+
+def _outcome_cell(entry: ConsoleEntry) -> str:
+    """The third column: what the provider actually did, or that it was never asked."""
+
+    if not entry.reached_provider:
+        return (
+            "<span class='never'>Nothing reached Razorpay</span>"
+            f"<span class='muted'>payment {_text(entry.payment_state)}</span>"
+        )
+    return (
+        f"<code>{_text(entry.provider_order_id)}</code>"
+        f"<span class='muted'>{_text(entry.provider_state)}"
+        f" &middot; payment {_text(entry.payment_state)}</span>"
+    )
+
+
+def _verdict_cell(entry: ConsoleEntry) -> str:
+    if entry.decision is None:
+        return "<span class='muted'>No decision recorded</span>"
+    reasons = ", ".join(entry.reasons) if entry.reasons else ""
+    parts = [f"<strong>{_text(entry.decision)}</strong>"]
+    parts.append(f"<span class='amount'>{_money(entry.amount_minor, entry.currency)}</span>")
+    if reasons:
+        parts.append(f"<span class='reasons'>{_text(reasons)}</span>")
+    if entry.approval_granted_by is not None:
+        parts.append(f"<span class='muted'>approved by {_text(entry.approval_granted_by)}</span>")
+    return "".join(parts)
+
+
+def _proposed_cell(entry: ConsoleEntry) -> str:
+    sku = f"<code>{_text(entry.sku)}</code>" if entry.sku else "<span class='muted'>no SKU</span>"
+    quantity = f" &times;{_text(entry.quantity)}" if entry.quantity is not None else ""
+    return (
+        f"{sku}{quantity}"
+        f"<span class='purpose'>{_text(entry.purpose)}</span>"
+        f"<span class='muted'>{_text(entry.actor_id)} &middot; {_text(entry.source)}</span>"
+    )
+
+
+def _row(entry: ConsoleEntry, *, receipt_href: str) -> str:
+    return (
+        f"<tr class='{entry.tone}'>"
+        f"<td class='when'>{_text(entry.requested_at.strftime('%H:%M:%S'))}</td>"
+        f"<td class='proposed'>{_proposed_cell(entry)}</td>"
+        f"<td class='verdict'>{_verdict_cell(entry)}</td>"
+        f"<td class='outcome'>{_outcome_cell(entry)}</td>"
+        f"<td class='link'><a href='{html.escape(receipt_href, quote=True)}'>Receipt</a></td>"
+        "</tr>"
+    )
+
+
+def render_console(
+    *,
+    tenant_id: UUID,
+    tenant_name: str,
+    entries: list[ConsoleEntry],
+    receipt_href: str,
+    generated_at: datetime,
+) -> str:
+    """Build the timeline page for one tenant.
+
+    `receipt_href` is a format string taking `payment_request_id`, supplied by the route so this
+    module never has to know how the application is mounted.
+    """
+
+    if entries:
+        rows = "".join(
+            _row(
+                entry, receipt_href=receipt_href.format(payment_request_id=entry.payment_request_id)
+            )
+            for entry in entries
+        )
+        body = f"""<table>
+<thead><tr>
+  <th>Time</th>
+  <th>Agent proposed<span>every field here is agent-influenced</span></th>
+  <th>TrustGate derived and decided<span>no field here is the agent's to set</span></th>
+  <th>Provider outcome<span>what Razorpay actually did</span></th>
+  <th></th>
+</tr></thead>
+<tbody>{rows}</tbody>
+</table>"""
+    else:
+        body = (
+            "<p class='empty'>No purchase attempts recorded for this tenant yet. "
+            "Run the demo flows and reload.</p>"
+        )
+
+    blocked = sum(1 for entry in entries if entry.decision == "DENY")
+    reached = sum(1 for entry in entries if entry.reached_provider)
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrustGate console</title>
+<style>
+  :root {{ color-scheme: light dark; }}
+  body {{ font-family: ui-sans-serif, system-ui, sans-serif; margin: 0;
+          background: #f4f7f7; color: #0d1719; line-height: 1.5; }}
+  .wrap {{ max-width: 78rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }}
+  header {{ margin-bottom: 1.5rem; }}
+  h1 {{ font-size: 1.5rem; margin: 0 0 .3rem; }}
+  .meta {{ color: #5e7477; font-size: .85rem; font-family: ui-monospace, monospace; }}
+  .tally {{ display: flex; gap: 1.5rem; margin: 1.25rem 0 1.75rem; flex-wrap: wrap; }}
+  .tally div {{ background: #fff; border: 1px solid #d2dfdf; border-radius: 12px;
+                padding: .75rem 1.1rem; min-width: 8rem; }}
+  .tally .n {{ font-size: 1.5rem; font-weight: 600; display: block; }}
+  .tally .l {{ font-size: .78rem; color: #5e7477; }}
+  table {{ width: 100%; border-collapse: collapse; background: #fff;
+           border: 1px solid #d2dfdf; border-radius: 12px; overflow: hidden; }}
+  th {{ text-align: left; font-size: .78rem; padding: .8rem .9rem; vertical-align: top;
+        border-bottom: 1px solid #d2dfdf; color: #0d1719; }}
+  th span {{ display: block; font-weight: 400; color: #5e7477; font-size: .72rem;
+             margin-top: .15rem; }}
+  td {{ padding: .8rem .9rem; border-bottom: 1px solid #eef3f3; font-size: .85rem;
+        vertical-align: top; }}
+  tr:last-child td {{ border-bottom: 0; }}
+  td.proposed code, td.outcome code {{ font-family: ui-monospace, monospace; font-size: .8rem; }}
+  td span, td strong {{ display: block; }}
+  .purpose {{ color: #0d1719; margin-top: .15rem; }}
+  .muted {{ color: #5e7477; font-size: .78rem; margin-top: .15rem; }}
+  .amount {{ font-weight: 600; margin-top: .1rem; }}
+  .reasons {{ color: #973029; font-size: .78rem; margin-top: .15rem; }}
+  .never {{ color: #2c6349; font-weight: 600; }}
+  tr.ok td:first-child {{ box-shadow: inset 3px 0 0 #2c6349; }}
+  tr.warn td:first-child {{ box-shadow: inset 3px 0 0 #8c5a0c; }}
+  tr.bad td:first-child {{ box-shadow: inset 3px 0 0 #973029; }}
+  td.when {{ font-family: ui-monospace, monospace; color: #5e7477; white-space: nowrap; }}
+  td.link a {{ color: #2c6349; }}
+  .empty {{ color: #5e7477; background: #fff; border: 1px solid #d2dfdf;
+            border-radius: 12px; padding: 1.5rem; }}
+  .note {{ margin-top: 1.5rem; font-size: .8rem; color: #5e7477; max-width: 46rem; }}
+  @media (prefers-color-scheme: dark) {{
+    body {{ background: #080f10; color: #e6efef; }}
+    table, .tally div, .empty {{ background: #101a1c; border-color: #223436; }}
+    th {{ border-color: #223436; color: #e6efef; }}
+    td {{ border-color: #162426; }}
+    .purpose {{ color: #e6efef; }}
+    .never {{ color: #6fd0a1; }}
+    .reasons {{ color: #ef9a92; }}
+    td.link a {{ color: #6fd0a1; }}
+  }}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>{_text(tenant_name)}</h1>
+  <p class="meta">tenant {_text(tenant_id)} &middot; generated {_text(generated_at)}</p>
+</header>
+<div class="tally">
+  <div><span class="n">{len(entries)}</span><span class="l">attempts</span></div>
+  <div><span class="n">{blocked}</span><span class="l">refused</span></div>
+  <div><span class="n">{reached}</span><span class="l">reached the provider</span></div>
+</div>
+{body}
+<p class="note">Read-only. This view cannot authorize, approve, or create anything &mdash; it
+renders rows that already exist. The amount, merchant, and currency in the middle column were
+derived by the server and were never the agent's to choose.</p>
+</div>
+</body>
+</html>"""

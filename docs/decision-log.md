@@ -730,3 +730,56 @@ A13 registers a control case that succeeds. A rejection test proves nothing unle
 rejected would otherwise have worked, and an authority built wrong would satisfy every rejection
 assertion while testing nothing.
 **Slice:** B - Tier A completion
+
+## 2026-08-26: The Console Renders Rows and Cannot Create Them
+**Decision:** Every console route is a GET that reads existing rows. There is no approve,
+authorize, or retry control, and `tests/test_console.py` asserts against the application's live
+route table that no state-changing path under `/console` exists.
+**Alternatives considered:** Buttons to drive the three demo flows from the page; an approve
+control so the approval flow could be completed on screen.
+**Rationale:** The project's claim is that authority is held by the server and reachable only
+through the checked paths. A console with an approve button would be a new path to authority, and
+the claim would need an asterisk exactly where it is being demonstrated. A demonstration of a
+safety property must not weaken the property.
+
+The demo therefore drives flows from outside the console and the page witnesses them. That is a
+small cost at recording time and it keeps A15's statement - that no reachable surface grants
+payment authority - true without qualification.
+**Slice:** D - M6 console
+
+## 2026-08-26: The Console Is Off Unless Asked For, and Carries Tenant Identity in the Path
+**Decision:** `/console` requires `ENABLE_CONSOLE=true` and takes the tenant id as a path segment.
+Disabled, it answers 404.
+**Alternatives considered:** Ship it always reachable; keep header identity and accept that
+receipts cannot be opened in a browser; a session cookie.
+**Rationale:** Two separate problems meet here. Browsers cannot set `X-Tenant-Id`, so the API's
+header identity is unreachable from a browser and the receipt route could not be opened during a
+demo at all - the console would show a timeline and never open a single receipt. The path carries
+it instead, exactly as the checkout page already carries an order id.
+
+That is the same testbed-grade identity the project already documents as not being production
+authentication, moved rather than weakened, but it is more exposed: a tenant id in a URL lands in
+browser history and appears on screen in a recording. Acceptable only because every tenant here is
+synthetic, and the reason the surface is gated. A demo surface that ships reachable is one somebody
+deploys by accident.
+
+The disabled response is 404 rather than 403 so a deployment that never enabled it does not
+advertise that the route exists.
+**Slice:** D - M6 console
+
+## 2026-08-26: The Timeline Links to the Receipt Instead of Redrawing It
+**Decision:** The console renders a comparative timeline and links each row to the existing
+receipt. It does not re-render the proposed/derived/provider stages.
+**Alternatives considered:** A full three-column view inside the console; a combined page.
+**Rationale:** `api.receipt.render_receipt` already lays out proposed against derived against
+provider outcome, which is the three-column view the build plan asked for. A second renderer
+assembling the same facts is a second opinion about what happened, and the receipt exists precisely
+so that the readable record and the JSON record cannot disagree.
+
+What was actually missing is different in shape. A receipt is deep and singular; a viewer arrives
+wanting the comparison - a safe purchase, an approval-gated one, and a refused attack in one
+column, where the difference is visible without reading three pages. The most important cell is on
+the refused row: whether anything reached the provider, derived from whether a provider order
+exists rather than from the decision, because a rejection that still created an order would not be
+a rejection.
+**Slice:** D - M6 console

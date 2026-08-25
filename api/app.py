@@ -5,6 +5,7 @@ from api.routes import (
     catalog_payment_requests,
     checkout_authorities,
     checkout_page,
+    console,
     evidence,
     internal_policies,
     payment_requests,
@@ -22,6 +23,7 @@ app.include_router(approvals.router)
 app.include_router(internal_policies.router)
 app.include_router(razorpay.router)
 app.include_router(webhooks.router)
+app.include_router(console.router)
 
 
 @app.get("/health")
