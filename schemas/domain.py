@@ -400,3 +400,41 @@ class PaymentRequestEvidence(BaseModel):
     provider_order: EvidenceProviderOrder | None
     provider_events: list[EvidenceProviderEvent]
     audit_trail: list[EvidenceAuditEntry]
+
+
+class RazorpayWebhookPaymentEntity(BaseModel):
+    """The payment entity Razorpay nests inside a webhook payload."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: Annotated[str, Field(min_length=1, max_length=255)]
+    order_id: Annotated[str, Field(min_length=1, max_length=255)]
+    amount: NonNegativeAmount
+    currency: CurrencyCode
+    status: Annotated[str, Field(min_length=1, max_length=64)]
+
+
+class RazorpayWebhookPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    payment: dict[str, RazorpayWebhookPaymentEntity] | None = None
+
+
+class RazorpayWebhookEvent(BaseModel):
+    """A Razorpay webhook envelope.
+
+    Unknown fields are ignored rather than rejected: Razorpay adds fields over time, and refusing
+    an otherwise valid signed event because of an unrecognised key would drop real payment
+    outcomes. The fields this project acts on are pinned.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    event: Annotated[str, Field(min_length=1, max_length=64)]
+    payload: RazorpayWebhookPayload
+
+    @property
+    def payment_entity(self) -> RazorpayWebhookPaymentEntity | None:
+        if self.payload.payment is None:
+            return None
+        return self.payload.payment.get("entity")

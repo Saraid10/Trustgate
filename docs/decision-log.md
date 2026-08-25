@@ -398,3 +398,23 @@ and an existing policy test caught it.
 Refund states are excluded deliberately: a refund is not evidence that the day's budget should
 reopen, and treating it as such would let one limit be spent twice in a day.
 **Slice:** Hardening found while auditing after M4
+
+## 2026-08-25: Razorpay Webhook Is the Only Authority for a Payment Outcome
+**Decision:** Verify the `X-Razorpay-Signature` HMAC over the exact received bytes before parsing,
+using a `RAZORPAY_WEBHOOK_SECRET` distinct from the key secret. Reject a signed event whose
+reported amount or currency differs from the stored order. Acknowledge signed events this project
+does not act on with 202 and change nothing. Advance state only through `transition()`.
+**Alternatives considered:** Trust the browser callback; parse the body then verify a
+re-serialisation; accept the amount the provider reports; return an error for unhandled event
+types.
+**Rationale:** A browser callback proves a client returned with matching identifiers and nothing
+more, so it cannot be what a captured state rests on. Parsing before verification would check a
+signature against a different message than the one signed. A valid signature proves the event came
+from the provider, not that it matches what was authorized, so the server-derived order amount
+governs and a mismatch is refused and audited. Razorpay retries unacknowledged events, so
+returning an error for event types outside this project's scope would generate indefinite retries
+for events that are not problems.
+**On state:** `payment.captured` cannot reach a payment still in `AUTHORIZED`; the provider
+authorizes first. The state machine refuses that shortcut, so a validly signed capture cannot jump
+a payment straight to captured, and a test pins it.
+**Slice:** M3 Razorpay Test Mode flow
