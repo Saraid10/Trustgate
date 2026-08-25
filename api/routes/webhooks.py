@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.database import get_session
 from mock_provider.signing import signature_is_valid
 from models.domain import AuditEvent, Payment, ProviderEvent, Tenant
+from models.locking import locked
 from schemas.domain import ProviderWebhookEvent
 from state_machine.transitions import StateMachineError, transition
 
@@ -120,9 +121,11 @@ async def receive_provider_event(
     async with transaction:
         tenant = await session.scalar(select(Tenant).where(Tenant.id == event.tenant_id))
         payment = await session.scalar(
-            select(Payment)
-            .where(Payment.id == event.payment_id, Payment.tenant_id == event.tenant_id)
-            .with_for_update()
+            locked(
+                select(Payment).where(
+                    Payment.id == event.payment_id, Payment.tenant_id == event.tenant_id
+                )
+            )
         )
         # A nested transition can roll back and expire `payment`. Keep the identity values while
         # the locked row is known-good, so rejection auditing never triggers implicit async I/O.

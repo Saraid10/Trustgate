@@ -1,4 +1,4 @@
-.PHONY: check-slice-1 check-slice-2 check-slice-3 scenario-tier-a verify-migrations
+.PHONY: check-slice-1 check-slice-2 check-slice-3 scenario-tier-a verify-migrations mutation
 
 check-slice-1:
 	ruff check .
@@ -18,3 +18,6 @@ scenario-tier-a:
 verify-migrations:
 	docker compose exec api alembic check
 
+# Breaks each safety invariant on purpose and requires its guarding tests to fail.
+mutation:
+	python -m scenarios.mutation

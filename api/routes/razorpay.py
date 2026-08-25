@@ -37,6 +37,7 @@ from models.domain import (
     RazorpayOrder,
     Tenant,
 )
+from models.locking import locked
 from schemas.domain import RazorpayCallback, RazorpayOrderResponse, RazorpayWebhookEvent
 from state_machine.transitions import StateMachineError, transition
 
@@ -257,12 +258,12 @@ async def create_order(
     # exactly the duplicate this recovery path exists to avoid. The lock is held across the
     # provider call, so the second caller waits and then observes the confirmed row.
     existing = await session.scalar(
-        select(RazorpayOrder)
-        .where(
-            RazorpayOrder.tenant_id == tenant.id,
-            RazorpayOrder.checkout_authority_id == checkout_authority_id,
+        locked(
+            select(RazorpayOrder).where(
+                RazorpayOrder.tenant_id == tenant.id,
+                RazorpayOrder.checkout_authority_id == checkout_authority_id,
+            )
         )
-        .with_for_update()
     )
     if existing is not None:
         if existing.provider_state == "CONFIRMED":

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_session
 from models.domain import Merchant, PolicyMerchant, SpendingPolicy, Tenant
+from models.locking import locked
 from schemas.domain import InternalPolicyCreate, SpendingPolicySchema
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -26,9 +27,7 @@ async def create_policy(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="internal token required")
     transaction = session.begin_nested() if session.in_transaction() else session.begin()
     async with transaction:
-        tenant = await session.scalar(
-            select(Tenant).where(Tenant.id == request.tenant_id).with_for_update()
-        )
+        tenant = await session.scalar(locked(select(Tenant).where(Tenant.id == request.tenant_id)))
         if tenant is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown tenant")
         merchants = list(

@@ -20,6 +20,7 @@ from models.domain import (
     SpendingPolicy,
     Tenant,
 )
+from models.locking import locked
 from schemas.domain import ApprovalGrantResponse
 from state_machine.transitions import transition
 
@@ -60,9 +61,12 @@ async def grant_approval(
                 status_code=status.HTTP_403_FORBIDDEN, detail="APPROVER_IS_REQUESTER"
             )
         payment = await session.scalar(
-            select(Payment)
-            .where(Payment.payment_request_id == payment_request.id, Payment.tenant_id == tenant.id)
-            .with_for_update()
+            locked(
+                select(Payment).where(
+                    Payment.payment_request_id == payment_request.id,
+                    Payment.tenant_id == tenant.id,
+                )
+            )
         )
         if payment is None or payment.state != "APPROVAL_REQUIRED":
             raise HTTPException(

@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.domain import Approval, AuditEvent, Payment, PaymentRequest, SpendingPolicy
+from models.locking import locked
 from policy_engine.evaluate import release_daily_spend
 
 LEGAL_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
@@ -146,6 +147,13 @@ async def transition(
 
     The caller supplies a payment already scoped by trusted tenant identity. This
     function re-reads and locks that exact tenant/payment pair before updating it.
+
+    `populate_existing` is what makes the lock mean anything. Without it SQLAlchemy returns the
+    instance already in the identity map and keeps its loaded attributes, so a caller that waited
+    on the lock would acquire it, receive the committed row from Postgres, and then decide from the
+    state it read before waiting. The wait would be real and the decision stale, which permits two
+    callers to authorize the same payment. `expire_on_commit=False` removes the only thing that
+    would otherwise have refreshed it.
     """
 
     transaction = session.begin_nested() if session.in_transaction() else session.begin()
@@ -155,9 +163,11 @@ async def transition(
     async with transaction:
         with session.no_autoflush:
             result = await session.execute(
-                select(Payment)
-                .where(Payment.id == payment.id, Payment.tenant_id == payment.tenant_id)
-                .with_for_update()
+                locked(
+                    select(Payment).where(
+                        Payment.id == payment.id, Payment.tenant_id == payment.tenant_id
+                    )
+                )
             )
             locked_payment = result.scalar_one_or_none()
 
@@ -260,9 +270,11 @@ async def _consume_approval(session: AsyncSession, *, payment: Payment, approval
     """Validate and atomically consume the one-time approval in this transaction."""
 
     approval = await session.scalar(
-        select(Approval)
-        .where(Approval.id == approval_id, Approval.tenant_id == payment.tenant_id)
-        .with_for_update()
+        locked(
+            select(Approval).where(
+                Approval.id == approval_id, Approval.tenant_id == payment.tenant_id
+            )
+        )
     )
     if approval is None or approval.payment_request_id != payment.payment_request_id:
         raise ApprovalNotFoundError(approval_id, "Approval was not found for this payment request.")

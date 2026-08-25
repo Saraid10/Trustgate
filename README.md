@@ -49,6 +49,41 @@ authority it did not have.
 
 The remaining Tier A scenarios (A3, A4, A6-A10, A11a, A12-A14) are not yet implemented.
 
+## What the Tests Are Worth
+
+A passing suite says the code behaves as written. It does not say the tests would object if the
+code stopped doing something important, and only the second claim matters when the subject is
+money. This project has evidence for the difference: request-scoped sessions once discarded every
+write while 146 tests passed, because the suite asserted inside the same transaction it wrote in.
+
+`make mutation` breaks each safety invariant on purpose, one at a time, and requires the tests named
+as its guards to fail. Every source file is restored in a `finally` block and the restoration is
+checked against `git diff` before the report prints, so an interrupted run cannot leave a mutation
+behind. It exits non-zero if any mutation survives.
+
+```text
+11 mutations applied to the safety core
+  [caught  ] payment-row-lock                 A payment is locked before its state is read and changed.
+  [caught  ] locked-read-freshness            A locked read decides from the committed row, not from a cached one.
+  [caught  ] locking-discipline               Row locks are taken through the one helper that keeps them meaningful.
+  [caught  ] daily-budget-predicate           The daily budget upsert refuses to exceed the limit.
+  [caught  ] budget-release-from-state-guard  Budget is returned only by a payment that actually reserved it.
+  [caught  ] checkout-script-escaping         Catalog text cannot terminate the checkout page's script element.
+  [caught  ] request-session-commit           A successful request commits its writes.
+  [caught  ] provider-event-identity          Lifecycle events for one payment are distinct events, not replays.
+  [caught  ] self-approval-guard              An approval cannot be granted by the requesting actor.
+  [caught  ] evidence-tenant-filter           Evidence is scoped to the tenant that asked for it.
+  [caught  ] receipt-search-fail-closed       An incomplete provider search never reports a receipt as absent.
+```
+
+The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires
+the lock correctly and then discards the row Postgres returned, because SQLAlchemy keeps the
+attributes of an object already in the session's identity map. A second caller therefore blocked on
+the lock as designed, received the committed row, kept its stale copy, and authorized a payment
+that had just been authorized. The lock was serialising when transitions ran, not what state they
+decided from. All locking now goes through `models.locking.locked()`, and a test asserts that
+helper is the only place in the source that can take a lock.
+
 ## Current Scope
 
 TrustGate uses only synthetic tenants, merchants, and INR prices. It is a local safety testbed, not

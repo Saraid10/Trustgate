@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from api.routes.checkout_authorities import (
@@ -34,7 +34,7 @@ from models.domain import (
     Tenant,
 )
 from policy_engine.evaluate import reserve_daily_spend
-from state_machine.transitions import transition
+from state_machine.transitions import IllegalTransitionError, transition
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -451,5 +451,74 @@ async def test_pending_intent_race_creates_only_one_provider_order() -> None:
                 delete(RazorpayOrder).where(RazorpayOrder.tenant_id == data.tenant_id)
             )
             await session.commit()
+        await _cleanup(sessions, data.tenant_id)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_second_caller_cannot_decide_from_state_the_lock_should_have_hidden() -> None:
+    """The row lock must hold a second transition off until the first one commits.
+
+    The interleaving is driven explicitly rather than left to the scheduler. The second caller
+    begins its transition while the first is written but uncommitted, which is the only ordering
+    where the lock does any work. Postgres guarantees it cannot acquire the row, so it necessarily
+    decides after the commit and finds AUTHORIZED already set.
+
+    Without the lock the second caller reads the pre-commit state under READ COMMITTED, decides
+    from CREATED, and authorizes a payment that was authorized moments earlier. Racing the two
+    callers with a barrier reproduces that only intermittently: `populate_existing` often re-reads
+    after the winner commits and the bug hides. Driving the order makes it deterministic.
+    """
+
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    data = await _seed(sessions, state="CREATED")
+    try:
+        first = sessions()
+        second = sessions()
+        try:
+
+            async def authorize(session: AsyncSession) -> Payment:
+                payment = await session.scalar(select(Payment).where(Payment.id == data.payment_id))
+                assert payment is not None
+                return await transition(
+                    session,
+                    payment,
+                    "AUTHORIZED",
+                    reason="ordered-transition",
+                    correlation_id=uuid4(),
+                )
+
+            await authorize(first)
+
+            follower = asyncio.ensure_future(authorize(second))
+            await asyncio.wait({follower}, timeout=1.0)
+            assert not follower.done(), (
+                "the second caller decided while the first was still uncommitted"
+            )
+
+            await first.commit()
+
+            with pytest.raises(IllegalTransitionError):
+                await follower
+            await second.rollback()
+        finally:
+            await first.close()
+            await second.close()
+
+        async with sessions() as session:
+            state = await session.scalar(select(Payment.state).where(Payment.id == data.payment_id))
+            transitions = await session.scalar(
+                select(func.count())
+                .select_from(AuditEvent)
+                .where(
+                    AuditEvent.tenant_id == data.tenant_id,
+                    AuditEvent.event_kind == "payment_transition",
+                )
+            )
+
+        assert state == "AUTHORIZED"
+        assert transitions == 1, f"the payment was transitioned {transitions} times"
+    finally:
         await _cleanup(sessions, data.tenant_id)
         await engine.dispose()

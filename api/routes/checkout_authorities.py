@@ -23,6 +23,7 @@ from models.domain import (
     SpendingPolicy,
     Tenant,
 )
+from models.locking import locked
 from schemas.domain import CheckoutAuthorityResponse
 
 router = APIRouter(prefix="/api/v1/checkout-authorities", tags=["checkout authorities"])
@@ -80,31 +81,33 @@ async def consume_checkout_authority(
 
     transaction = session.begin_nested() if session.in_transaction() else session.begin()
     async with transaction:
-        await session.scalar(select(Tenant).where(Tenant.id == tenant_id).with_for_update())
+        await session.scalar(locked(select(Tenant).where(Tenant.id == tenant_id)))
         authority = await session.scalar(
-            select(CheckoutAuthority)
-            .where(
-                CheckoutAuthority.id == checkout_authority_id,
-                CheckoutAuthority.tenant_id == tenant_id,
+            locked(
+                select(CheckoutAuthority).where(
+                    CheckoutAuthority.id == checkout_authority_id,
+                    CheckoutAuthority.tenant_id == tenant_id,
+                )
             )
-            .with_for_update()
         )
         if authority is None:
             raise CheckoutAuthorityUnavailableError("CHECKOUT_AUTHORITY_NOT_FOUND")
         if authority.used_at is not None or authority.expires_at <= datetime.now(UTC):
             raise CheckoutAuthorityUnavailableError("CHECKOUT_AUTHORITY_UNAVAILABLE")
         request = await session.scalar(
-            select(PaymentRequest)
-            .where(
-                PaymentRequest.id == authority.payment_request_id,
-                PaymentRequest.tenant_id == tenant_id,
+            locked(
+                select(PaymentRequest).where(
+                    PaymentRequest.id == authority.payment_request_id,
+                    PaymentRequest.tenant_id == tenant_id,
+                )
             )
-            .with_for_update()
         )
         payment = await session.scalar(
-            select(Payment)
-            .where(Payment.id == authority.payment_id, Payment.tenant_id == tenant_id)
-            .with_for_update()
+            locked(
+                select(Payment).where(
+                    Payment.id == authority.payment_id, Payment.tenant_id == tenant_id
+                )
+            )
         )
         policy = await session.scalar(
             select(SpendingPolicy)
@@ -147,18 +150,23 @@ async def issue_checkout_authority(
 
     transaction = session.begin_nested() if session.in_transaction() else session.begin()
     async with transaction:
-        await session.scalar(select(Tenant).where(Tenant.id == tenant.id).with_for_update())
+        await session.scalar(locked(select(Tenant).where(Tenant.id == tenant.id)))
         request = await session.scalar(
-            select(PaymentRequest)
-            .where(PaymentRequest.id == payment_request_id, PaymentRequest.tenant_id == tenant.id)
-            .with_for_update()
+            locked(
+                select(PaymentRequest).where(
+                    PaymentRequest.id == payment_request_id,
+                    PaymentRequest.tenant_id == tenant.id,
+                )
+            )
         )
         if request is None:
             return _rejection("CHECKOUT_AUTHORITY_NOT_FOUND", status.HTTP_404_NOT_FOUND)
         payment = await session.scalar(
-            select(Payment)
-            .where(Payment.tenant_id == tenant.id, Payment.payment_request_id == request.id)
-            .with_for_update()
+            locked(
+                select(Payment).where(
+                    Payment.tenant_id == tenant.id, Payment.payment_request_id == request.id
+                )
+            )
         )
         decision = await session.scalar(
             select(AuthorizationDecision)

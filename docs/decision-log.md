@@ -619,3 +619,58 @@ instead of a refusal, and a distinct error would have told an agent whether a va
 badly formed or simply belonged to another tenant, which is the disclosure the tenant-scoped
 lookups exist to avoid.
 **Slice:** Security review
+
+## 2026-08-26: The Test Suite Is Verified by Breaking the Code on Purpose
+**Decision:** `scenarios/mutation.py` applies one deliberate break at a time to a safety-critical
+line and requires the tests named as its guards to fail. It exits non-zero if any mutation
+survives, restores each file in a `finally` block, and verifies the working tree against `git diff`
+before reporting.
+**Alternatives considered:** Trust the passing suite; adopt a general mutation-testing tool such as
+`mutmut` or `cosmic-ray`; measure line coverage instead.
+**Rationale:** A passing suite says the code behaves as written. It does not say the tests would
+object if the code stopped doing something important, and those are different claims. This project
+has evidence for the gap: request-scoped sessions never committed and 146 tests passed, and an
+external reviewer found one P0 and five P1 defects that reading the code had not surfaced. Coverage
+would not have caught any of them, because every one of those lines was executed — just never
+asserted about. A general mutation tool generates thousands of mutants across the whole tree and
+reports a percentage; the interesting question here is not a score but whether each named safety
+invariant has a test that actually depends on it. Enumerating the invariants keeps the output an
+answer rather than a metric, and it is short enough to read in an interview.
+**Slice:** A — verification of the verification
+
+## 2026-08-26: A Locked Read Must Overwrite the Identity Map
+**Decision:** All row locking goes through `models.locking.locked()`, which pairs
+`with_for_update()` with `execution_options(populate_existing=True)`.
+**Alternatives considered:** Add `populate_existing` only at the state machine, where the defect was
+found; expire objects before locking; drop `expire_on_commit=False`.
+**Rationale:** `SELECT ... FOR UPDATE` through the ORM acquires the lock correctly and then discards
+the row Postgres returned if that object is already in the session's identity map. A caller that
+waits on the lock therefore waits for real and then decides from the state it read before waiting,
+which is exactly the state the lock existed to hide. In `transition()` this permitted two callers
+to authorize one payment: the second blocked as designed, received the committed `AUTHORIZED` row,
+kept its cached `CREATED`, and moved the payment again. `expire_on_commit=False` removed the only
+thing that would otherwise have refreshed it.
+
+Fixing only the state machine would have left twelve other lock sites carrying the same trap,
+including the single-use guards on `authority.used_at`, `approval.consumed_at`, and
+`RazorpayOrder.provider_state`. Those are safe today only because no earlier line in the same
+request happens to load those rows first — an accident of call order, not a guarantee, and not
+something a reviewer can be expected to re-derive on every diff. Routing every lock through one
+helper makes the pairing structural, and it matches the project's standing rule of enforcing an
+invariant at the lowest layer that can hold it.
+**Slice:** A — found by the mutation suite
+
+## 2026-08-26: The Locking Rule Is Enforced Against the Source, Not Remembered
+**Decision:** `tests/test_locking_discipline.py` asserts that `models/locking.py` is the only source
+file containing `.with_for_update(`, and that the helper still pairs the lock with
+`populate_existing`. A third test fails when a new package is added that the scan does not cover.
+**Alternatives considered:** A comment on the helper; a code-review convention; a ruff custom rule.
+**Rationale:** The defect this prevents is invisible at the call site. The code reads as correct,
+the lock is genuinely taken, and whether the staleness is reachable depends on what some other line
+in the same request loaded earlier. A convention fails silently the first time someone writes the
+obvious thing, and the failure is a double authorization rather than a test error. A source-level
+assertion is a blunt instrument, but it is checkable, it names the reason in its failure message,
+and it fails at the moment the rule is broken rather than months later under concurrency. The
+third test earned its place immediately by catching two packages omitted from the scan list when it
+was first written.
+**Slice:** A — verification of the verification
