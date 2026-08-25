@@ -376,3 +376,25 @@ transaction and asserts within it, so route writes are visible whether or not th
 database. `tests/test_session_lifecycle.py` drives the dependency directly against PostgreSQL and
 was confirmed to fail when the defect is reintroduced.
 **Slice:** M3 Razorpay Test Mode flow
+
+## 2026-08-25: Reserved Daily Budget Is Released on Terminal States
+**Decision:** Return an actor's reserved daily budget when a payment reaches DENIED, EXPIRED,
+FAILED, or CANCELLED, but only when it leaves a state that actually held a reservation
+(APPROVAL_REQUIRED, AUTHORIZED, PROVIDER_PENDING). The subtraction is floored at zero.
+**Alternatives considered:** Leave reservations to lapse at UTC midnight; release on every terminal
+transition regardless of prior state; release on refund as well.
+**Rationale:** Reserving on REQUIRE_APPROVAL stops an approved high-value request bypassing the
+daily limit, but reserving without releasing turned an abandoned approval into a lockout. An agent
+acting entirely inside its permitted contract could exhaust an actor's day by requesting approvals
+nobody grants: a denial of service needing no forged amount and no escaped tenant scope. Measured
+against the running system, three abandoned requests consumed a 200,000 minor-unit day.
+
+The from-state guard matters as much as the release. Budget is reserved only for ALLOW and
+REQUIRE_APPROVAL; a request denied outright never reserves and stays in CREATED. An unguarded
+release refunded budget that was never taken, so a request denied *because* the day was full
+handed back an amount it never held. That inverts the control into a way to manufacture budget,
+and an existing policy test caught it.
+
+Refund states are excluded deliberately: a refund is not evidence that the day's budget should
+reopen, and treating it as such would let one limit be spent twice in a day.
+**Slice:** Hardening found while auditing after M4

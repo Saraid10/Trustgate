@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -176,6 +176,46 @@ async def reserve_daily_spend(
                 DailySpendReservation.reserved_amount_minor + amount_minor
                 <= policy.max_daily_spend_minor
             ),
+        )
+        .returning(DailySpendReservation.id)
+    )
+    return (await session.scalar(statement)) is not None
+
+
+async def release_daily_spend(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    actor_id: str,
+    amount_minor: int,
+    spend_date: date,
+) -> bool:
+    """Return reserved budget when a request reaches a state that will never spend it.
+
+    Reserving on `REQUIRE_APPROVAL` stops an approved high-value request from bypassing the daily
+    limit, but a reservation that is never released turns an abandoned approval into a lockout: an
+    agent acting entirely within its permitted contract can exhaust an actor's day by requesting
+    approvals nobody grants. Releasing on terminal states makes the reservation reflect money that
+    can still be spent rather than money that was once contemplated.
+
+    The subtraction is floored at zero and applied in one statement, so a double release cannot
+    drive the reservation negative and hand an actor extra budget.
+    """
+
+    if amount_minor <= 0:
+        return False
+    statement = (
+        update(DailySpendReservation)
+        .where(
+            DailySpendReservation.tenant_id == tenant_id,
+            DailySpendReservation.actor_id == actor_id,
+            DailySpendReservation.spend_date == spend_date,
+        )
+        .values(
+            reserved_amount_minor=func.greatest(
+                DailySpendReservation.reserved_amount_minor - amount_minor, 0
+            ),
+            updated_at=datetime.now(UTC),
         )
         .returning(DailySpendReservation.id)
     )

@@ -8,7 +8,8 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.domain import Approval, AuditEvent, Payment, SpendingPolicy
+from models.domain import Approval, AuditEvent, Payment, PaymentRequest, SpendingPolicy
+from policy_engine.evaluate import release_daily_spend
 
 LEGAL_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
     "CREATED": frozenset({"APPROVAL_REQUIRED", "AUTHORIZED", "DENIED", "EXPIRED"}),
@@ -23,6 +24,28 @@ LEGAL_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
     "REFUNDED": frozenset(),
     "CANCELLED": frozenset(),
 }
+
+# States a payment reaches when its reserved budget will never be spent. Reaching one of these
+# returns the reservation, so an abandoned approval cannot consume an actor's day.
+#
+# CAPTURED is absent because the money was spent. Refund states are also absent: a refund is not
+# evidence that the day's budget should reopen, and treating it as such would let the same limit be
+# spent twice within one day.
+BUDGET_RELEASING_STATES: Final[frozenset[str]] = frozenset(
+    {"DENIED", "EXPIRED", "FAILED", "CANCELLED"}
+)
+
+# States a payment occupies only after its request reserved daily budget. Budget is reserved when
+# a decision is ALLOW or REQUIRE_APPROVAL, which move the payment to AUTHORIZED or
+# APPROVAL_REQUIRED respectively; a request denied outright never reserves and stays in CREATED
+# until it is marked DENIED.
+#
+# Releasing without this guard would refund budget that was never taken. A request denied *because*
+# the day was already full would hand back an amount it never held, letting an agent manufacture
+# budget by making requests it knew would fail.
+RESERVATION_HOLDING_STATES: Final[frozenset[str]] = frozenset(
+    {"APPROVAL_REQUIRED", "AUTHORIZED", "PROVIDER_PENDING"}
+)
 
 
 class StateMachineError(Exception):
@@ -184,6 +207,8 @@ async def transition(
         else:
             from_state = locked_payment.state
             locked_payment.state = to_state
+            if to_state in BUDGET_RELEASING_STATES and from_state in RESERVATION_HOLDING_STATES:
+                await _release_reserved_budget(session, payment=locked_payment)
             _write_audit_event(
                 session,
                 locked_payment,
@@ -203,6 +228,30 @@ async def transition(
     if locked_payment is None:
         raise RuntimeError("Payment row lock unexpectedly returned no payment.")
     return locked_payment
+
+
+async def _release_reserved_budget(session: AsyncSession, *, payment: Payment) -> None:
+    """Return the reservation this payment's request took when it was evaluated.
+
+    The reservation is keyed by the day the request was evaluated, not by today, so a request that
+    dies after midnight releases the budget it actually consumed rather than a later day's.
+    """
+
+    request = await session.scalar(
+        select(PaymentRequest).where(
+            PaymentRequest.id == payment.payment_request_id,
+            PaymentRequest.tenant_id == payment.tenant_id,
+        )
+    )
+    if request is None:
+        return
+    await release_daily_spend(
+        session,
+        tenant_id=payment.tenant_id,
+        actor_id=request.actor_id,
+        amount_minor=request.amount_minor,
+        spend_date=request.created_at.date(),
+    )
 
 
 async def _consume_approval(session: AsyncSession, *, payment: Payment, approval_id: UUID) -> None:
