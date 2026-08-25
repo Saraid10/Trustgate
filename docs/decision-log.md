@@ -478,3 +478,24 @@ summary would hide the property the project exists to demonstrate. A test pins t
 **Language:** the receipt says tamper-evident and states plainly that it is not a signed or legally
 non-repudiable record, and a test pins that wording so it cannot quietly inflate.
 **Slice:** M4 evidence receipt
+
+## 2026-08-25: A Payment Identifier Is Not an Event Identity
+**Decision:** Derive the provider-event deduplication key from Razorpay's `X-Razorpay-Event-Id`
+header when present, falling back to `razorpay:{event_type}:{payment_id}`.
+**Alternatives considered:** Keep deduplicating on the payment identifier alone; hash the raw
+payload; drop deduplication and rely on the state machine.
+**Rationale:** Razorpay reports `payment.authorized` and `payment.captured` for one payment under
+the same payment identifier. Deduplicating on it rejected the capture as a replay of the
+authorization and stranded the payment in `PROVIDER_PENDING`, so the lifecycle could never
+complete. The header is preferred because it is stable across retries of the same event, which is
+the case deduplication exists for; the documentation does not guarantee it, so the fallback pairs
+event type with payment: distinct per lifecycle step, identical for a genuine redelivery. Hashing
+the raw payload was rejected because a provider may vary incidental fields between retries, which
+would defeat deduplication precisely when it is needed.
+**Why the suite missed it:** the test helper minted a fresh payment identifier on every call, so a
+two-event sequence looked valid while never testing whether both events could coexist. The tests
+now build events for a named payment, and one asserts the authorized and captured steps of the
+same payment are both accepted in order.
+**Note:** deduplication is defence in depth. The state machine independently refuses a repeated
+transition, so a missed duplicate cannot advance a payment twice.
+**Slice:** M3 Razorpay Test Mode flow

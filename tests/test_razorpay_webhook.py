@@ -305,3 +305,112 @@ async def test_a_missing_signature_header_is_refused(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "RAZORPAY_WEBHOOK_SIGNATURE_INVALID"
+
+
+def _body_for_payment(
+    order_id: str, payment_id: str, *, event: str, amount: int = ORDER_AMOUNT
+) -> bytes:
+    """Build an event for a specific payment id.
+
+    Razorpay reports the authorized and captured events for one payment under the same payment
+    identifier. The generic helper mints a fresh id per call, which made a sequence look valid
+    while hiding whether the two events could actually coexist.
+    """
+
+    return json.dumps(
+        {
+            "entity": "event",
+            "event": event,
+            "contains": ["payment"],
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": payment_id,
+                        "order_id": order_id,
+                        "amount": amount,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+
+
+async def test_capture_follows_authorization_for_the_same_payment_id(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """The real lifecycle: one payment, two events, one identifier.
+
+    Deduplicating on the payment id alone would reject the capture as a replay of the
+    authorization and strand the payment in PROVIDER_PENDING.
+    """
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    authorized = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.authorized")
+    captured = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.captured")
+
+    first = await _post(client, authorized, _sign(authorized))
+    mid_state = await async_session.scalar(
+        select(Payment.state).where(Payment.id == order.payment_id)
+    )
+    second = await _post(client, captured, _sign(captured))
+    final = await async_session.scalar(select(Payment).where(Payment.id == order.payment_id))
+
+    assert first.status_code == 202
+    assert mid_state == "PROVIDER_PENDING"
+    assert second.status_code == 202, f"capture rejected: {second.json()}"
+    assert final is not None and final.state == "CAPTURED"
+    assert final.captured_amount_minor == ORDER_AMOUNT
+
+
+async def test_a_genuine_redelivery_of_one_event_is_still_deduplicated(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """Separating the lifecycle steps must not weaken replay protection.
+
+    The same event redelivered carries the same event type and payment id, so it resolves to the
+    same identity and is refused.
+    """
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    body = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.authorized")
+    signature = _sign(body)
+
+    first = await _post(client, body, signature)
+    second = await _post(client, body, signature)
+
+    events = list(
+        await async_session.scalars(
+            select(ProviderEvent).where(ProviderEvent.payment_id == order.payment_id)
+        )
+    )
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert second.json()["detail"] == "RAZORPAY_WEBHOOK_DUPLICATE_EVENT"
+    assert len(events) == 1
+
+
+async def test_the_provider_event_header_identity_is_preferred_when_present(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """Razorpay's own event id is stable across retries, which is what dedupe is for."""
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    body = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.authorized")
+    headers = {
+        "X-Razorpay-Signature": _sign(body),
+        "X-Razorpay-Event-Id": "evt_stable_across_retries",
+        "Content-Type": "application/json",
+    }
+
+    first = await client.post("/api/v1/razorpay/webhook", content=body, headers=headers)
+    second = await client.post("/api/v1/razorpay/webhook", content=body, headers=headers)
+
+    stored = await async_session.scalar(
+        select(ProviderEvent.provider_event_id).where(ProviderEvent.payment_id == order.payment_id)
+    )
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert stored == "razorpay:evt_stable_across_retries"

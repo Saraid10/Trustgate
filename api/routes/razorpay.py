@@ -449,6 +449,29 @@ def _log_unattributed_webhook_rejection(request: Request, raw_body: bytes, reaso
     )
 
 
+def webhook_event_identity(request: Request, event: RazorpayWebhookEvent, payment_id: str) -> str:
+    """Derive the identity used to deduplicate a provider event.
+
+    The payment identifier alone is not an event identity. Razorpay reports `payment.authorized`
+    and `payment.captured` for one payment under the same payment id, so deduplicating on it would
+    reject the capture as a replay of the authorization and strand the payment in
+    `PROVIDER_PENDING`.
+
+    Razorpay's own event header is preferred when present, because it is stable across retries of
+    the same event, which is exactly the case deduplication exists for. The documentation does not
+    guarantee the header, so the fallback pairs the event type with the payment: distinct per
+    lifecycle step, identical for a genuine redelivery.
+
+    Deduplication is defence in depth rather than the only guard. The state machine independently
+    refuses a repeated transition, so a missed duplicate cannot advance a payment twice.
+    """
+
+    header_id = request.headers.get("X-Razorpay-Event-Id")
+    if header_id:
+        return f"razorpay:{header_id}"
+    return f"razorpay:{event.event}:{payment_id}"
+
+
 @router.post("/webhook", status_code=status.HTTP_202_ACCEPTED)
 async def receive_razorpay_webhook(
     request: Request,
@@ -538,7 +561,7 @@ async def receive_razorpay_webhook(
         async with session.begin_nested():
             provider_event = ProviderEvent(
                 tenant_id=order.tenant_id,
-                provider_event_id=entity.id,
+                provider_event_id=webhook_event_identity(request, event, entity.id),
                 event_type=event.event,
                 payment_id=payment.id,
                 raw_payload=raw_body,

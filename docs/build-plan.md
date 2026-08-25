@@ -2,23 +2,23 @@
 
 The complete phase and slice sequence from the current state to the finished project.
 
-**Status as of 2026-08-25.** Slices 1-6, the TrustGate authority upgrades, M0, M1, M2, M4's JSON
-receipt, and M3's order path are complete. Per-milestone evidence is in
+**Status as of 2026-08-25.** Slices 1-6, the TrustGate authority upgrades, M0, M1, M2, M3, and M4
+are complete. Per-milestone evidence is in
 [`docs/m0-verification.md`](m0-verification.md), [`docs/m1-verification.md`](m1-verification.md),
 and [`docs/m2-verification.md`](m2-verification.md). The current and target architecture is in
 [`docs/architecture.md`](architecture.md).
 
 | Gate | Result |
 |---|---|
-| Full suite | 152 passed |
-| `mypy --strict` | clean, 37 source files |
+| Full suite | 183 passed |
+| `mypy --strict` | clean, 39 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean under `python -O` |
-| Migration `base` -> `head` round trip | clean, all nine revisions reversible |
+| Migration `base` -> `head` round trip | clean, all ten revisions reversible |
 | Concurrency invariants raced | 4 PostgreSQL multi-session races passed |
 | Tier A scenarios | A1, A2, A11b, A15 passing; matrix generated from the registry |
-| Razorpay Test Mode | order creation proven end to end against the real provider |
-| Evidence receipt | JSON endpoint complete; HTML rendering outstanding |
+| Razorpay Test Mode | order creation proven against the real provider; signed webhooks carry a payment to CAPTURED; checkout page renders without authorizing |
+| Evidence receipt | JSON endpoint and HTML receipt complete, from one shared assembly |
 | Slice verification notes | slices 1-6, hardening, M0, M1, M2 |
 
 **Defects found by running the system, not by adding to it:** request-scoped sessions never

@@ -1,0 +1,84 @@
+{
+  "payment_request_id": "12b4a33b-ae0c-4dd3-a908-b3240aa7ea8a",
+  "tenant_id": "ef76ce96-36d2-498a-83f1-79a20c4a7a8c",
+  "generated_at": "2026-08-25T17:16:13.438967Z",
+  "proposed": {
+    "sku": "CLOUD-STARTER",
+    "quantity": 1,
+    "purpose": "M3 end-to-end Test Mode verification.",
+    "actor_id": "trustgate-demo-api",
+    "source": "API",
+    "idempotency_key": "2d3fb0c2-46b2-4704-9289-2d085740d1ee",
+    "requested_at": "2026-08-25T15:15:30.194730Z"
+  },
+  "derived": {
+    "merchant_id": "9a68ece5-2b04-4660-9a0d-5896424b4320",
+    "merchant_display_name": "Campus Cloud",
+    "catalog_item_id": "1d34001e-d03a-40cb-880b-ed15ea2db476",
+    "catalog_name": "Cloud Starter",
+    "amount_minor": 39900,
+    "currency": "INR",
+    "order_ref": "catalog:CLOUD-STARTER",
+    "request_revision": 1
+  },
+  "policy": {
+    "version": 1,
+    "currency": "INR",
+    "max_amount_minor": 100000,
+    "max_daily_spend_minor": 200000,
+    "approval_required_above_minor": 50000,
+    "expiry": "2026-08-26T15:13:05.717700Z"
+  },
+  "decision": {
+    "decision": "ALLOW",
+    "reasons": [],
+    "policy_version": 1,
+    "correlation_id": "b8810c79-7acd-4f16-ae1b-6845b9d7060a",
+    "decided_at": "2026-08-25T15:15:30.194730Z"
+  },
+  "approval": null,
+  "authority": {
+    "checkout_authority_id": "7899b865-e9ac-4e97-8492-f8f0468313c2",
+    "snapshot_hash": "92bc08fc67cdf4e8423a3445569fbf7c8d8207e0dcdfe82af149721818465fa9",
+    "policy_version": 1,
+    "approval_id": null,
+    "expires_at": "2026-08-25T15:30:30.358397Z",
+    "used_at": "2026-08-25T15:15:30.418454Z"
+  },
+  "payment": {
+    "payment_id": "2d8e2504-d3ff-45d2-9a4e-fc30ab0066b9",
+    "state": "CAPTURED",
+    "authorized_amount_minor": 39900,
+    "captured_amount_minor": 39900,
+    "refunded_amount_minor": 0,
+    "updated_at": "2026-08-25T17:16:13.350200Z"
+  },
+  "provider_order": {
+    "razorpay_order_id": "order_TU34VP9nc4a3k5",
+    "amount_minor": 39900,
+    "currency": "INR",
+    "receipt": "tg_7899b865e9ac4e978492f8f0468313c2",
+    "created_at": "2026-08-25T15:15:30.387130Z"
+  },
+  "provider_events": [
+    {
+      "provider_event_id": "razorpay:payment.authorized:pay_70bdc31b520a48",
+      "event_type": "payment.authorized",
+      "received_at": "2026-08-25T17:16:13.296022Z",
+      "processed_at": "2026-08-25T17:16:13.326601Z"
+    },
+    {
+      "provider_event_id": "razorpay:payment.captured:pay_70bdc31b520a48",
+      "event_type": "payment.captured",
+      "received_at": "2026-08-25T17:16:13.350200Z",
+      "processed_at": "2026-08-25T17:16:13.371293Z"
+    }
+  ],
+  "audit_trail": [
+    {
+      "event_kind": "payment_transition",
+      "correlation_id": "b8810c79-7acd-4f16-ae1b-6845b9d7060a",
+      "created_at": "2026-08-25T15:15:30.194730Z"
+    }
+  ]
+}
