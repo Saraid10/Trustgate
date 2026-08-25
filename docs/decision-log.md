@@ -579,3 +579,18 @@ tamper-evidence would assert a property the artifact does not have, which is pre
 overstatement this project's evidence discipline exists to prevent. A signed or hash-chained
 snapshot would earn the stronger word and is recorded as the deferred upgrade.
 **Slice:** M4 evidence receipt
+
+## 2026-08-26: Audit References Are Durable, Not Payload Conventions
+**Decision:** Give every `AuditEvent` nullable, tenant-scoped foreign-key references to the payment
+request, payment, checkout authority, and provider order it concerns. Build evidence trails from
+those references rather than from correlation IDs or JSON payload keys.
+**Alternatives considered:** Continue collecting events by a decision correlation; query arbitrary
+JSON keys in each receipt; use one lifecycle-wide correlation ID.
+**Rationale:** Lifecycle operations run in independent requests, so their correlations properly
+differ. JSON is useful event detail but not a durable relational contract: a review-required
+provider-order event with only a receipt and order list disappeared from its own evidence trail.
+The new composite foreign keys make a cross-tenant reference structurally impossible. References
+remain nullable only for rejections occurring before a trusted local object exists. Migration 0011
+backfills historic records through tenant-scoped joins and limits the receipt fallback to the one
+legacy review-required event that used it.
+**Slice:** M4 evidence receipt hardening after external review

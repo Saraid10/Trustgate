@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from fixtures import FixtureData
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -20,7 +21,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app import app
 from api.database import get_session
-from models.domain import CatalogItem, PaymentRequest
+from api.routes.razorpay import _reconcile_intent
+from models.domain import (
+    AuditEvent,
+    CatalogItem,
+    CheckoutAuthority,
+    Payment,
+    PaymentRequest,
+    RazorpayOrder,
+)
 
 
 @pytest_asyncio.fixture
@@ -412,3 +421,75 @@ async def test_the_trail_does_not_pull_in_another_purchase(
     body = (await client.get(f"/api/v1/payment-requests/{first}/evidence", headers=headers)).json()
 
     assert second not in str(body["audit_trail"])
+
+
+async def test_the_trail_uses_a_structured_order_reference_when_payload_has_no_purchase_id(
+    client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An event cannot vanish merely because its detail payload has a different shape."""
+
+    request_id = await _create_request(client, seeded_fixture_data)
+    issued = await client.post(
+        f"/api/v1/checkout-authorities/{request_id}", headers=_headers(seeded_fixture_data)
+    )
+    assert issued.status_code == 200, issued.text
+
+    authority = await async_session.scalar(
+        select(CheckoutAuthority).where(
+            CheckoutAuthority.id == issued.json()["checkout_authority_id"]
+        )
+    )
+    assert authority is not None
+    payment = await async_session.scalar(
+        select(Payment).where(Payment.payment_request_id == authority.payment_request_id)
+    )
+    assert payment is not None
+
+    intent = RazorpayOrder(
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        checkout_authority_id=authority.id,
+        payment_id=payment.id,
+        razorpay_order_id=None,
+        provider_state="PENDING",
+        receipt=f"tg_{authority.id.hex}",
+        amount_minor=payment.authorized_amount_minor or 0,
+        currency="INR",
+    )
+    async_session.add(intent)
+    await async_session.flush()
+
+    async def two_provider_orders(**_: object) -> list[str]:
+        return ["order_firstduplicate", "order_secondduplicate"]
+
+    monkeypatch.setattr("api.routes.razorpay._find_orders_by_receipt", two_provider_orders)
+    with pytest.raises(HTTPException) as caught:
+        await _reconcile_intent(
+            async_session,
+            intent=intent,
+            key_id="rzp_test_public",
+            key_secret="test-secret",  # noqa: S106
+            correlation_id=uuid4(),
+        )
+    assert caught.value.detail == "RAZORPAY_DUPLICATE_ORDERS_FOR_RECEIPT"
+
+    event = await async_session.scalar(
+        select(AuditEvent).where(AuditEvent.event_kind == "razorpay_order_needs_review")
+    )
+    assert event is not None
+    assert event.provider_order_id == intent.id
+    assert event.payment_request_id is None
+    assert event.payment_id == intent.payment_id
+    assert event.checkout_authority_id == intent.checkout_authority_id
+    assert set(event.payload) == {"receipt", "razorpay_order_ids"}
+
+    receipt = await client.get(
+        f"/api/v1/payment-requests/{request_id}/evidence", headers=_headers(seeded_fixture_data)
+    )
+    body = receipt.json()
+
+    assert receipt.status_code == 200, receipt.text
+    assert body["provider_order"]["provider_state"] == "NEEDS_REVIEW"
+    assert "razorpay_order_needs_review" in {entry["event_kind"] for entry in body["audit_trail"]}

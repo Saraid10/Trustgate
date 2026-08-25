@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
@@ -53,10 +53,14 @@ def _audit_rejection(
     correlation_id: object,
     reason: str,
     event: ProviderWebhookEvent,
+    payment_request_id: UUID | None,
+    payment_id: UUID | None,
 ) -> None:
     session.add(
         AuditEvent(
             tenant_id=tenant_id,
+            payment_request_id=payment_request_id,
+            payment_id=payment_id,
             correlation_id=correlation_id,
             event_kind="webhook_rejected",
             payload={
@@ -120,6 +124,10 @@ async def receive_provider_event(
             .where(Payment.id == event.payment_id, Payment.tenant_id == event.tenant_id)
             .with_for_update()
         )
+        # A nested transition can roll back and expire `payment`. Keep the identity values while
+        # the locked row is known-good, so rejection auditing never triggers implicit async I/O.
+        payment_request_id = payment.payment_request_id if payment is not None else None
+        payment_id = payment.id if payment is not None else None
         if tenant is None or payment is None:
             if tenant is not None:
                 _audit_rejection(
@@ -128,6 +136,8 @@ async def receive_provider_event(
                     correlation_id=correlation_id,
                     reason="WEBHOOK_TENANT_MISMATCH",
                     event=event,
+                    payment_request_id=payment_request_id,
+                    payment_id=payment_id,
                 )
             response = JSONResponse(
                 status_code=status.HTTP_409_CONFLICT,
@@ -140,6 +150,8 @@ async def receive_provider_event(
                 correlation_id=correlation_id,
                 reason="WEBHOOK_TIMESTAMP_STALE",
                 event=event,
+                payment_request_id=payment_request_id,
+                payment_id=payment_id,
             )
             response = JSONResponse(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -159,6 +171,8 @@ async def receive_provider_event(
                     correlation_id=correlation_id,
                     reason="WEBHOOK_DUPLICATE_EVENT",
                     event=event,
+                    payment_request_id=payment_request_id,
+                    payment_id=payment_id,
                 )
                 response = JSONResponse(
                     status_code=status.HTTP_409_CONFLICT,
@@ -194,6 +208,8 @@ async def receive_provider_event(
                         correlation_id=correlation_id,
                         reason="WEBHOOK_DUPLICATE_EVENT",
                         event=event,
+                        payment_request_id=payment_request_id,
+                        payment_id=payment_id,
                     )
                     response = JSONResponse(
                         status_code=status.HTTP_409_CONFLICT,
@@ -206,6 +222,8 @@ async def receive_provider_event(
                         correlation_id=correlation_id,
                         reason=exc.reason_code,
                         event=event,
+                        payment_request_id=payment_request_id,
+                        payment_id=payment_id,
                     )
                     response = JSONResponse(
                         status_code=status.HTTP_409_CONFLICT,

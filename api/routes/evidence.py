@@ -136,31 +136,16 @@ async def build_payment_request_evidence(
         if payment is not None
         else []
     )
-    # The decision's correlation covers only the authorization step. Everything afterwards -
-    # issuing and consuming the authority, creating the provider order, verifying a callback or a
-    # webhook - runs under its own correlation, so gathering by correlation alone produced a
-    # receipt that stopped at the decision and omitted the lifecycle it is meant to evidence.
-    #
-    # Those later events name this purchase in their payloads, so they are gathered by identifier.
-    identifiers = {str(request.id)}
+    # Correlation ids cover requests, not purchases: later lifecycle work deliberately receives a
+    # fresh one. Audit rows therefore carry durable record references instead of making the
+    # receipt depend on JSON payload conventions maintained by every future writer.
+    matches_this_purchase = [AuditEvent.payment_request_id == request.id]
     if payment is not None:
-        identifiers.add(str(payment.id))
+        matches_this_purchase.append(AuditEvent.payment_id == payment.id)
     if authority is not None:
-        identifiers.add(str(authority.id))
-    if provider_order is not None and provider_order.razorpay_order_id is not None:
-        identifiers.add(provider_order.razorpay_order_id)
-
-    matches_this_purchase = [
-        AuditEvent.payload[key].astext.in_(identifiers)
-        for key in (
-            "payment_request_id",
-            "payment_id",
-            "checkout_authority_id",
-            "razorpay_order_id",
-        )
-    ]
-    if decision is not None:
-        matches_this_purchase.append(AuditEvent.correlation_id == decision.correlation_id)
+        matches_this_purchase.append(AuditEvent.checkout_authority_id == authority.id)
+    if provider_order is not None:
+        matches_this_purchase.append(AuditEvent.provider_order_id == provider_order.id)
 
     audit_events = list(
         await session.scalars(
@@ -254,6 +239,7 @@ async def build_payment_request_evidence(
         provider_order=(
             EvidenceProviderOrder(
                 razorpay_order_id=provider_order.razorpay_order_id,
+                provider_state=provider_order.provider_state,
                 amount_minor=provider_order.amount_minor,
                 currency=provider_order.currency,
                 receipt=provider_order.receipt,

@@ -210,6 +210,8 @@ async def seeded_fixture_data(async_session: AsyncSession) -> FixtureData:
     audit_event = AuditEvent(
         id=uuid4(),
         tenant_id=tenant_a.id,
+        payment_request_id=payment_request.id,
+        payment_id=payment.id,
         correlation_id=decision.correlation_id,
         event_kind="fixture_created",
         payload={"payment_id": str(payment.id)},
@@ -276,9 +278,12 @@ async def seeded_fixture_data(async_session: AsyncSession) -> FixtureData:
             daily_reservation,
             payment,
             provider_event,
-            audit_event,
         ]
     )
+    await async_session.flush()
+    # Audit references are foreign keys, not opaque JSON. The payment must therefore exist before
+    # its fixture audit entry is inserted, just as it does in each production write path.
+    async_session.add(audit_event)
     await async_session.flush()
 
     return FixtureData(

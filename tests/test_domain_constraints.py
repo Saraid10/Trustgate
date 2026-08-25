@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.domain import (
     Approval,
+    AuditEvent,
     AuthorizationDecision,
     CatalogItem,
     Merchant,
@@ -155,6 +156,14 @@ async def test_child_records_cannot_reference_cross_tenant_parents(
             payment_id=tenant_b_payment.id,
             raw_payload=b"{}",
             signature="test-signature",
+        ),
+        AuditEvent(
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            payment_request_id=tenant_b_request.id,
+            payment_id=tenant_b_payment.id,
+            correlation_id=uuid4(),
+            event_kind="cross_tenant_audit_reference",
+            payload={},
         ),
     ]
     for invalid_child in invalid_children:

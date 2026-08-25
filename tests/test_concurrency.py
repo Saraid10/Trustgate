@@ -128,10 +128,12 @@ async def _seed(session_factory: async_sessionmaker[AsyncSession], *, state: str
 
 async def _cleanup(session_factory: async_sessionmaker[AsyncSession], tenant_id: UUID) -> None:
     models = (
+        # Audit records now have tenant-scoped foreign keys to the purchase graph, so they must
+        # be removed before the objects they evidence.
+        AuditEvent,
         RazorpayOrder,
         CheckoutAuthority,
         ProviderEvent,
-        AuditEvent,
         Approval,
         AuthorizationDecision,
         Payment,

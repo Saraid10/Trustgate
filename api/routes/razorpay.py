@@ -210,6 +210,9 @@ async def _reconcile_intent(
         session.add(
             AuditEvent(
                 tenant_id=intent.tenant_id,
+                payment_id=intent.payment_id,
+                checkout_authority_id=intent.checkout_authority_id,
+                provider_order_id=intent.id,
                 correlation_id=correlation_id,
                 event_kind="razorpay_order_reconciled",
                 payload={"receipt": intent.receipt, "razorpay_order_id": matches[0]},
@@ -222,6 +225,9 @@ async def _reconcile_intent(
         session.add(
             AuditEvent(
                 tenant_id=intent.tenant_id,
+                payment_id=intent.payment_id,
+                checkout_authority_id=intent.checkout_authority_id,
+                provider_order_id=intent.id,
                 correlation_id=correlation_id,
                 event_kind="razorpay_order_needs_review",
                 payload={"receipt": intent.receipt, "razorpay_order_ids": matches},
@@ -290,6 +296,9 @@ async def create_order(
         session.add(
             AuditEvent(
                 tenant_id=tenant.id,
+                payment_id=existing.payment_id,
+                checkout_authority_id=existing.checkout_authority_id,
+                provider_order_id=existing.id,
                 correlation_id=correlation_id,
                 event_kind="razorpay_order_created",
                 payload={
@@ -333,9 +342,13 @@ async def create_order(
         currency=request.currency,
     )
     session.add(intent)
+    await session.flush()
     session.add(
         AuditEvent(
             tenant_id=tenant.id,
+            payment_id=intent.payment_id,
+            checkout_authority_id=intent.checkout_authority_id,
+            provider_order_id=intent.id,
             correlation_id=correlation_id,
             event_kind="razorpay_order_intent_recorded",
             payload={"checkout_authority_id": str(authority.id), "receipt": receipt},
@@ -358,6 +371,9 @@ async def create_order(
         session.add(
             AuditEvent(
                 tenant_id=tenant.id,
+                payment_id=intent.payment_id,
+                checkout_authority_id=intent.checkout_authority_id,
+                provider_order_id=intent.id,
                 correlation_id=correlation_id,
                 event_kind="razorpay_order_creation_failed",
                 payload={"checkout_authority_id": str(authority.id)},
@@ -371,6 +387,9 @@ async def create_order(
     session.add(
         AuditEvent(
             tenant_id=tenant.id,
+            payment_id=order.payment_id,
+            checkout_authority_id=order.checkout_authority_id,
+            provider_order_id=order.id,
             correlation_id=correlation_id,
             event_kind="razorpay_order_created",
             payload={
@@ -407,6 +426,9 @@ async def verify_callback(
         session.add(
             AuditEvent(
                 tenant_id=order.tenant_id,
+                payment_id=order.payment_id,
+                checkout_authority_id=order.checkout_authority_id,
+                provider_order_id=order.id,
                 correlation_id=uuid4(),
                 event_kind="razorpay_callback_rejected",
                 payload={
@@ -423,6 +445,9 @@ async def verify_callback(
     session.add(
         AuditEvent(
             tenant_id=order.tenant_id,
+            payment_id=order.payment_id,
+            checkout_authority_id=order.checkout_authority_id,
+            provider_order_id=order.id,
             correlation_id=uuid4(),
             event_kind="razorpay_callback_verified",
             payload={
@@ -592,6 +617,9 @@ async def receive_razorpay_webhook(
         session.add(
             AuditEvent(
                 tenant_id=order.tenant_id,
+                payment_id=order.payment_id,
+                checkout_authority_id=order.checkout_authority_id,
+                provider_order_id=order.id,
                 correlation_id=correlation_id,
                 event_kind="razorpay_webhook_rejected",
                 payload={
@@ -631,6 +659,9 @@ async def receive_razorpay_webhook(
                 session.add(
                     AuditEvent(
                         tenant_id=order.tenant_id,
+                        payment_id=order.payment_id,
+                        checkout_authority_id=order.checkout_authority_id,
+                        provider_order_id=order.id,
                         correlation_id=correlation_id,
                         event_kind="razorpay_payment_attempt_failed",
                         payload={
@@ -659,6 +690,9 @@ async def receive_razorpay_webhook(
         session.add(
             AuditEvent(
                 tenant_id=order.tenant_id,
+                payment_id=order.payment_id,
+                checkout_authority_id=order.checkout_authority_id,
+                provider_order_id=order.id,
                 correlation_id=correlation_id,
                 event_kind="razorpay_webhook_rejected",
                 payload={"reason": exc.reason_code, "razorpay_order_id": order.razorpay_order_id},
@@ -672,6 +706,9 @@ async def receive_razorpay_webhook(
     session.add(
         AuditEvent(
             tenant_id=order.tenant_id,
+            payment_id=order.payment_id,
+            checkout_authority_id=order.checkout_authority_id,
+            provider_order_id=order.id,
             correlation_id=correlation_id,
             event_kind="razorpay_webhook_verified",
             payload={

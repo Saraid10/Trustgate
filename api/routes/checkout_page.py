@@ -47,7 +47,7 @@ def _content_security_policy(nonce: str) -> str:
         f"connect-src 'self' {_RAZORPAY_ORIGINS}; "
         "img-src 'self' data: https:; "
         "style-src 'self' 'unsafe-inline'; "
-        "base-uri 'none'; object-src 'none'; form-action 'none'"
+        "base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'"
     )
 
 
@@ -201,7 +201,11 @@ def _render(
 
   var rzp = new Razorpay(options);
   rzp.on("payment.failed", function (response) {{
-    show("Payment failed: " + (response.error && response.error.description), "bad");
+    show(
+      "Payment attempt failed. You may retry: " +
+      (response.error && response.error.description),
+      "bad"
+    );
   }});
   payButton.onclick = function (event) {{
     event.preventDefault();

@@ -354,7 +354,8 @@ class EvidencePayment(BaseModel):
 
 
 class EvidenceProviderOrder(BaseModel):
-    razorpay_order_id: str
+    razorpay_order_id: str | None
+    provider_state: str
     amount_minor: NonNegativeAmount
     currency: CurrencyCode
     receipt: str

@@ -170,6 +170,8 @@ async def transition(
                     session.add(
                         AuditEvent(
                             tenant_id=locked_payment.tenant_id,
+                            payment_request_id=locked_payment.payment_request_id,
+                            payment_id=locked_payment.id,
                             correlation_id=correlation_id,
                             event_kind="illegal_transition_attempt",
                             payload={
@@ -318,6 +320,8 @@ def _write_audit_event(
     session.add(
         AuditEvent(
             tenant_id=payment.tenant_id,
+            payment_request_id=payment.payment_request_id,
+            payment_id=payment.id,
             correlation_id=correlation_id,
             event_kind=event_kind,
             payload=payload,

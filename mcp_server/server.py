@@ -174,6 +174,10 @@ def create_mcp_server(session_factory: SessionFactory = SessionLocal) -> FastMCP
                     session.add(
                         AuditEvent(
                             tenant_id=tenant.id,
+                            payment_request_id=(
+                                payment.payment_request_id if payment is not None else None
+                            ),
+                            payment_id=payment.id if payment is not None else None,
                             correlation_id=uuid4(),
                             event_kind="mcp_request_rejected",
                             payload={"reason": reason, "payment_request_id": payment_request_id},
@@ -183,6 +187,10 @@ def create_mcp_server(session_factory: SessionFactory = SessionLocal) -> FastMCP
                 session.add(
                     AuditEvent(
                         tenant_id=tenant.id,
+                        payment_request_id=(
+                            payment.payment_request_id if payment is not None else None
+                        ),
+                        payment_id=payment.id if payment is not None else None,
                         correlation_id=uuid4(),
                         event_kind="human_approval_requested",
                         payload={"payment_request_id": payment_request_id},

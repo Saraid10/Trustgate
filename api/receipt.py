@@ -122,6 +122,7 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
         order = evidence.provider_order
         provider_pairs = [
             ("Provider order", f"<code>{_text(order.razorpay_order_id)}</code>"),
+            ("Provider state", _text(order.provider_state)),
             ("Amount sent", _money(order.amount_minor, order.currency)),
             ("Receipt", f"<code>{_text(order.receipt)}</code>"),
         ]

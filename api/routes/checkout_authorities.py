@@ -125,6 +125,9 @@ async def consume_checkout_authority(
         session.add(
             AuditEvent(
                 tenant_id=tenant_id,
+                payment_request_id=request.id,
+                payment_id=payment.id,
+                checkout_authority_id=authority.id,
                 correlation_id=correlation_id,
                 event_kind="checkout_authority_consumed",
                 payload={"checkout_authority_id": str(authority.id), "payment_id": str(payment.id)},
@@ -177,6 +180,8 @@ async def issue_checkout_authority(
             session.add(
                 AuditEvent(
                     tenant_id=tenant.id,
+                    payment_request_id=request.id,
+                    payment_id=payment.id if payment is not None else None,
                     correlation_id=uuid4(),
                     event_kind="checkout_authority_rejected",
                     payload={"reason": reason, "payment_request_id": str(request.id)},
@@ -188,6 +193,8 @@ async def issue_checkout_authority(
             session.add(
                 AuditEvent(
                     tenant_id=tenant.id,
+                    payment_request_id=request.id,
+                    payment_id=payment.id if payment is not None else None,
                     correlation_id=uuid4(),
                     event_kind="checkout_authority_rejected",
                     payload={"reason": reason, "payment_request_id": str(request.id)},
@@ -206,6 +213,8 @@ async def issue_checkout_authority(
             session.add(
                 AuditEvent(
                     tenant_id=tenant.id,
+                    payment_request_id=request.id,
+                    payment_id=payment.id if payment is not None else None,
                     correlation_id=uuid4(),
                     event_kind="checkout_authority_rejected",
                     payload={"reason": reason, "payment_request_id": str(request.id)},
@@ -230,6 +239,8 @@ async def issue_checkout_authority(
                 session.add(
                     AuditEvent(
                         tenant_id=tenant.id,
+                        payment_request_id=request.id,
+                        payment_id=payment.id if payment is not None else None,
                         correlation_id=uuid4(),
                         event_kind="checkout_authority_rejected",
                         payload={"reason": reason, "payment_request_id": str(request.id)},
@@ -275,6 +286,9 @@ async def issue_checkout_authority(
         session.add(
             AuditEvent(
                 tenant_id=tenant.id,
+                payment_request_id=request.id,
+                payment_id=payment.id,
+                checkout_authority_id=authority.id,
                 correlation_id=uuid4(),
                 event_kind="checkout_authority_issued",
                 payload={

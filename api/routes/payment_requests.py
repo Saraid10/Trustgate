@@ -148,6 +148,8 @@ async def create_payment_request_for_context(
             session.add(
                 AuditEvent(
                     tenant_id=tenant.id,
+                    payment_request_id=existing.id,
+                    payment_id=payment.id,
                     correlation_id=decision.correlation_id,
                     event_kind="idempotency_key_collision",
                     payload={

@@ -480,11 +480,47 @@ class ProviderEvent(Base):
 
 class AuditEvent(Base):
     __tablename__ = "audit_event"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "payment_request_id"],
+            ["payment_request.tenant_id", "payment_request.id"],
+            name="fk_audit_event_payment_request_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "payment_id"],
+            ["payment.tenant_id", "payment.id"],
+            name="fk_audit_event_payment_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "checkout_authority_id"],
+            ["checkout_authority.tenant_id", "checkout_authority.id"],
+            name="fk_audit_event_checkout_authority_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "provider_order_id"],
+            ["razorpay_order.tenant_id", "razorpay_order.id"],
+            name="fk_audit_event_provider_order_tenant",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_audit_event_tenant_payment_request", "tenant_id", "payment_request_id"),
+        Index("ix_audit_event_tenant_payment", "tenant_id", "payment_id"),
+        Index("ix_audit_event_tenant_checkout_authority", "tenant_id", "checkout_authority_id"),
+        Index("ix_audit_event_tenant_provider_order", "tenant_id", "provider_order_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("tenant.id", ondelete="RESTRICT"), nullable=False
     )
+    # These durable, tenant-scoped links drive receipt assembly. Payload remains useful event
+    # detail, but is not an identity or a join contract.
+    payment_request_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    payment_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    checkout_authority_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    provider_order_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     correlation_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     event_kind: Mapped[str] = mapped_column(String(255), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

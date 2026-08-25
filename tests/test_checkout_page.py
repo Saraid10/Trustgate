@@ -194,6 +194,7 @@ async def test_the_page_loads_checkout_from_razorpay(
     body = (await client.get(f"/api/v1/razorpay/checkout/{order.razorpay_order_id}")).text
 
     assert "https://checkout.razorpay.com/v1/checkout.js" in body
+    assert "Payment attempt failed. You may retry:" in body
 
 
 HOSTILE_NAME = "</script><script>window.__pwned=1</script>"
@@ -226,7 +227,7 @@ async def test_hostile_catalog_text_cannot_escape_the_script_block(
     # The payload appears nowhere as live markup, in the script block or the document body.
     assert "<script>window.__pwned" not in body
     assert "</script><script>" not in body
-    assert "\u003c/script\u003e" in body, "the name was not neutralised inside the script block"
+    assert "\\u003c/script\\u003e" in body, "the name was not neutralised inside the script block"
 
 
 async def test_the_page_sends_a_script_nonce_policy(
@@ -241,6 +242,7 @@ async def test_the_page_sends_a_script_nonce_policy(
 
     assert "script-src 'nonce-" in policy
     assert "object-src 'none'" in policy
+    assert "frame-ancestors 'none'" in policy
     nonce = policy.split("script-src 'nonce-")[1].split("'")[0]
     assert nonce, "the policy carries an empty nonce"
     assert f'nonce="{nonce}"' in response.text, "the page scripts do not carry the policy nonce"
