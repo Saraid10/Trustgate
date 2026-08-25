@@ -2,26 +2,29 @@
 
 The complete phase and slice sequence from the current state to the finished project.
 
-**Status as of 2026-08-24.** Slices 1–6, the TrustGate authority upgrades, M0, M1, and M2 are
-complete. Per-milestone evidence is recorded in [`docs/m0-verification.md`](m0-verification.md),
-[`docs/m1-verification.md`](m1-verification.md), and [`docs/m2-verification.md`](m2-verification.md).
-M1's only outstanding item is the live-model run, which needs an Anthropic API key.
-Verified directly against the gates below:
+**Status as of 2026-08-25.** Slices 1-6, the TrustGate authority upgrades, M0, M1, M2, M4's JSON
+receipt, and M3's order path are complete. Per-milestone evidence is in
+[`docs/m0-verification.md`](m0-verification.md), [`docs/m1-verification.md`](m1-verification.md),
+and [`docs/m2-verification.md`](m2-verification.md). The current and target architecture is in
+[`docs/architecture.md`](architecture.md).
 
 | Gate | Result |
 |---|---|
-| Full suite | 123 passed |
-| `mypy --strict` | clean, 36 source files |
+| Full suite | 152 passed |
+| `mypy --strict` | clean, 37 source files |
 | `ruff check .` | clean |
-| Optimized-mode safety smoke test | clean — missing-approval protection behaves identically under `python -O` |
-| Migration `base` → `head` round trip | clean, all nine revisions reversible |
+| Optimized-mode safety smoke test | clean under `python -O` |
+| Migration `base` -> `head` round trip | clean, all nine revisions reversible |
 | Concurrency invariants raced | 4 PostgreSQL multi-session races passed |
 | Tier A scenarios | A1, A2, A11b, A15 passing; matrix generated from the registry |
-| Slice verification notes | present for slices 1–6, hardening, M0, M1, and M2 |
+| Razorpay Test Mode | order creation proven end to end against the real provider |
+| Evidence receipt | JSON endpoint complete; HTML rendering outstanding |
+| Slice verification notes | slices 1-6, hardening, M0, M1, M2 |
 
-(`docs/hardening-verification.md` records 22 source files for mypy; the count grew to 25 when the
-catalog, checkout-authority, and Razorpay route modules were added, and to 32 with M1's buyer-agent
-package and optional live-model adapter.)
+**Defects found by running the system, not by adding to it:** request-scoped sessions never
+committed (the API returned success and persisted nothing); daily budget was reserved and never
+released, letting a compliant agent lock out an actor for a day; the first budget fix then
+refunded budget that was never reserved. See `docs/architecture.md` for how each hid.
 
 ---
 
