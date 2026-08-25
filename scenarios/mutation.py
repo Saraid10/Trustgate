@@ -78,6 +78,70 @@ MUTATIONS: tuple[Mutation, ...] = (
         ),
     ),
     Mutation(
+        name="webhook-signature-check",
+        invariant="A provider event is authenticated before anything is done with it.",
+        path="api/routes/razorpay.py",
+        original="    if not signature or not hmac.compare_digest(expected, signature):",
+        mutated="    if False:",
+        guarding_tests=("tests/test_scenarios_tier_a.py::test_a6_a_forged_signature_is_refused",),
+    ),
+    Mutation(
+        name="webhook-freshness-window",
+        invariant="A signed provider event proves origin, not recency.",
+        path="api/routes/razorpay.py",
+        original='        return "RAZORPAY_WEBHOOK_STALE"',
+        mutated="        return None",
+        guarding_tests=(
+            "tests/test_scenarios_tier_a.py::test_a14_a_stale_signed_event_is_refused",
+        ),
+    ),
+    Mutation(
+        name="webhook-timestamp-required",
+        invariant="An event that cannot be dated cannot be bounded, so it is refused.",
+        path="api/routes/razorpay.py",
+        original='        return "RAZORPAY_WEBHOOK_TIMESTAMP_MISSING"',
+        mutated="        return None",
+        guarding_tests=(
+            "tests/test_scenarios_tier_a.py"
+            "::test_a14_an_event_with_no_timestamp_is_refused_rather_than_exempted",
+        ),
+    ),
+    Mutation(
+        name="approval-expiry",
+        invariant="An approval is a permission with a lifetime, not a permanent grant.",
+        path="state_machine/transitions.py",
+        original="    if approval.expires_at <= now:",
+        mutated="    if False:",
+        guarding_tests=(
+            "tests/test_scenarios_tier_a.py::test_a4_an_expired_approval_cannot_authorize",
+        ),
+    ),
+    Mutation(
+        name="authority-policy-drift",
+        invariant="An authority does not outlive the policy it was checked against.",
+        path="api/routes/checkout_authorities.py",
+        original="            or policy.version != authority.policy_version\n",
+        mutated="",
+        guarding_tests=(
+            "tests/test_scenarios_tier_a.py"
+            "::test_a13_a_policy_published_after_authorization_revokes_the_authority",
+        ),
+    ),
+    Mutation(
+        name="authority-snapshot-binding",
+        invariant="An authority is bound to the exact purchase it was issued for.",
+        path="api/routes/checkout_authorities.py",
+        original=(
+            "            or _snapshot_hash(request, authority.policy_version)"
+            " != authority.snapshot_hash\n"
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_scenarios_tier_a.py"
+            "::test_a13_an_amount_edited_after_authorization_breaks_the_snapshot_hash",
+        ),
+    ),
+    Mutation(
         name="daily-budget-predicate",
         invariant="The daily budget upsert refuses to exceed the limit.",
         path="policy_engine/evaluate.py",

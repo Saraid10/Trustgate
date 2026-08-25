@@ -7,7 +7,10 @@ are properties of what changed, so each scenario snapshots tenant state around t
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import inspect
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,27 +18,50 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from fixtures import FixtureData
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.app import app
 from api.database import get_session
+from api.routes.checkout_authorities import (
+    CheckoutAuthorityUnavailableError,
+    _snapshot_hash,
+    consume_checkout_authority,
+)
 from mcp_server.server import create_mcp_server
 from models.domain import (
+    Approval,
     AuditEvent,
     CatalogItem,
     CheckoutAuthority,
     Payment,
     PaymentRequest,
+    RazorpayOrder,
+    SpendingPolicy,
 )
-from scenarios.report import extract_section, render_section
+from scenarios.report import (
+    extract_mutation_section,
+    extract_section,
+    render_mutation_section,
+    render_section,
+)
 from scenarios.tier_a import REGISTRY
 from scenarios.tier_a.harness import (
     assert_attack_created_nothing,
     assert_attack_gained_no_authority,
     snapshot_tenant,
+)
+from state_machine.transitions import (
+    LEGAL_TRANSITIONS,
+    ApprovalAlreadyConsumedError,
+    ApprovalExpiredError,
+    IllegalTransitionError,
+    RefundExceedsCapturedError,
+    transition,
+    validate_transition,
 )
 
 McpCall = Callable[[str, dict[str, object]], Awaitable[dict[str, object]]]
@@ -77,6 +103,29 @@ async def mcp_call(
         return result
 
     return call
+
+
+def _registered_paths(application: FastAPI) -> list[str]:
+    """Every state-changing path the app actually serves.
+
+    FastAPI keeps an included router as a single wrapper object rather than flattening its routes
+    into `app.routes`, so a naive scan of the top level sees almost nothing and would let a scenario
+    claiming "no such route exists" pass by looking in the wrong place. This walks into the
+    wrappers, and read-only verbs are dropped because the question is what can be initiated.
+    """
+
+    paths: list[str] = []
+    pending: list[object] = list(application.routes)
+    while pending:
+        route = pending.pop()
+        nested = getattr(route, "routes", None)
+        if nested:
+            pending.extend(nested)
+            continue
+        methods = set(getattr(route, "methods", set()) or set())
+        if methods - {"GET", "HEAD", "OPTIONS"}:
+            paths.append(str(getattr(route, "path", "")))
+    return paths
 
 
 def _headers(data: FixtureData) -> dict[str, str]:
@@ -445,6 +494,21 @@ def test_readme_attack_matrix_matches_the_registry() -> None:
     assert section == render_section(), "README attack matrix is stale; regenerate it"
 
 
+def test_readme_mutation_table_matches_the_mutation_registry() -> None:
+    """The published mutation table is generated for the same reason the attack matrix is.
+
+    A hand-written list of guarded invariants decays into a list of invariants the project used to
+    guard, and that decay is invisible: the tests still pass, the table still reads well, and the
+    claim quietly stops being true. Regenerate with `python -m scenarios.report --mutations`.
+    """
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    section = extract_mutation_section(readme)
+
+    assert section is not None, "README is missing the mutation-table markers"
+    assert section == render_mutation_section(), "README mutation table is stale; regenerate it"
+
+
 async def test_a5_an_approval_cannot_be_granted_by_the_requesting_actor(
     api_client: AsyncClient,
     async_session: AsyncSession,
@@ -504,3 +568,896 @@ async def test_a5_a_separate_approver_can_still_grant(
 
     assert response.status_code == 200, response.text
     assert response.json()["payment_request_id"] == request_id
+
+
+# --------------------------------------------------------------------------------------
+# A3 - Currency substitution
+# --------------------------------------------------------------------------------------
+
+
+async def test_a3_the_agent_surface_derives_currency_and_cannot_be_told_one() -> None:
+    """The strongest form of this defence is that the field does not exist.
+
+    A validated currency parameter would still be a parameter untrusted text could aim at. Deriving
+    currency from the catalog item leaves nothing to validate, and the assertion is made against
+    the schema every tool actually publishes rather than against the ones this test remembered.
+    """
+
+    server = create_mcp_server()
+    tools = await server.list_tools()
+
+    assert tools, "no MCP tools were exposed, so this proves nothing"
+    for tool in tools:
+        properties = set(tool.inputSchema.get("properties", {}))
+        assert "currency" not in properties, f"{tool.name} accepts a caller-supplied currency"
+
+
+async def test_a3_the_only_currency_accepting_route_is_disabled_by_default(
+    api_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The legacy operator route is the one surface that takes a currency, and it is off.
+
+    A field that cannot be reached is a field that cannot be attacked. This is asserted rather than
+    assumed because the flag is the whole reason the surface is safe by default, and a change to
+    its default would otherwise be invisible.
+    """
+
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await api_client.post(
+        "/api/v1/payment-requests",
+        json={
+            "actor_id": seeded_fixture_data.tenant_a_actor_one,
+            "merchant_id": str(seeded_fixture_data.tenant_a_allowed_merchant.id),
+            "amount_minor": 1_000,
+            "currency": "USD",
+            "order_ref": f"order-{uuid4()}",
+            "idempotency_key": str(uuid4()),
+        },
+        headers=_headers(seeded_fixture_data),
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 404, response.text
+    assert_attack_created_nothing(before, after)
+
+
+async def test_a3_an_enabled_legacy_route_still_denies_a_currency_outside_the_policy(
+    api_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Turning the surface on must not turn the control off.
+
+    An operator who enables the legacy route for a real integration should not thereby acquire a
+    currency-substitution hole, so the flag is switched on here deliberately and the policy is
+    still what settles the currency. A mismatch is denied rather than converted: a system that
+    silently reinterprets a currency has decided an amount on the payer's behalf.
+    """
+
+    monkeypatch.setenv("ENABLE_LEGACY_PAYMENT_REQUEST_API", "true")
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await api_client.post(
+        "/api/v1/payment-requests",
+        json={
+            "actor_id": seeded_fixture_data.tenant_a_actor_one,
+            "merchant_id": str(seeded_fixture_data.tenant_a_allowed_merchant.id),
+            "amount_minor": 1_000,
+            "currency": "USD",
+            "order_ref": f"order-{uuid4()}",
+            "idempotency_key": str(uuid4()),
+        },
+        headers=_headers(seeded_fixture_data),
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["decision"] == "DENY"
+    assert "CURRENCY_NOT_ALLOWED" in body["reasons"]
+    assert_attack_gained_no_authority(before, after)
+
+
+# --------------------------------------------------------------------------------------
+# A11a - Unknown tenant header
+# --------------------------------------------------------------------------------------
+
+
+async def test_a11a_an_unknown_tenant_header_is_refused(
+    api_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """A well-formed tenant id that resolves to nothing is refused before any route body runs."""
+
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await api_client.post(
+        "/api/v1/catalog-payment-requests",
+        json=_purchase(),
+        headers={"X-Tenant-Id": str(uuid4())},
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 403
+    assert_attack_created_nothing(before, after)
+
+
+async def test_a11a_an_unknown_tenant_is_indistinguishable_from_a_forbidden_one() -> None:
+    """Refusal must not become an oracle for which tenant ids exist.
+
+    A distinct 404 for "no such tenant" against 403 for "not yours" would let anyone holding the
+    endpoint enumerate real tenant identifiers one request at a time. Both answers are the same
+    status and the same body, so a refusal carries no information beyond the refusal.
+    """
+
+    unknown = str(uuid4())
+    malformed = "not-a-uuid"
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        unknown_response = await client.post(
+            "/api/v1/catalog-payment-requests", json=_purchase(), headers={"X-Tenant-Id": unknown}
+        )
+        malformed_response = await client.post(
+            "/api/v1/catalog-payment-requests", json=_purchase(), headers={"X-Tenant-Id": malformed}
+        )
+
+    assert unknown_response.status_code == 403
+    assert unknown_response.json()["detail"] == "unknown tenant"
+    # A malformed header is refused by validation before resolution, which is a different code path
+    # reaching the same outcome: no tenant, no work done, nothing disclosed about what exists.
+    assert malformed_response.status_code == 422
+    assert unknown not in malformed_response.text
+
+
+# --------------------------------------------------------------------------------------
+# A12 - Idempotency key collision
+# --------------------------------------------------------------------------------------
+
+
+async def test_a12_a_reused_key_with_a_different_purchase_returns_the_first_decision(
+    api_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """A repeated key must never authorize the second purchase it was attached to.
+
+    The dangerous reading of an idempotency key is "this request already succeeded, return that".
+    Applied to a *different* payload that turns a retry into an authorization the payer never
+    made: send a small purchase, then resend the key carrying a larger one. The server answers with
+    the original decision and a 409, so the caller cannot mistake it for acceptance of what it just
+    sent, and the second purchase never exists.
+    """
+
+    key = str(uuid4())
+    first = await api_client.post(
+        "/api/v1/catalog-payment-requests",
+        json=_purchase(sku="CLOUD-STARTER", quantity=1, idempotency_key=key),
+        headers=_headers(seeded_fixture_data),
+    )
+    assert first.status_code == 201
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    second = await api_client.post(
+        "/api/v1/catalog-payment-requests",
+        json=_purchase(sku="CLOUD-TEAM", quantity=2, idempotency_key=key),
+        headers=_headers(seeded_fixture_data),
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    collision = await async_session.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.event_kind == "idempotency_key_collision")
+        .order_by(AuditEvent.created_at.desc())
+    )
+
+    assert second.status_code == 409
+    assert second.json()["payment_request_id"] == first.json()["payment_request_id"]
+    assert collision is not None
+    assert collision.payload["reason"] == "IDEMPOTENCY_KEY_REPLAYED"
+    # The replayed key created no second request, and nothing gained authority from the collision.
+    assert after.payment_request_ids == before.payment_request_ids
+    assert_attack_gained_no_authority(before, after)
+
+
+# --------------------------------------------------------------------------------------
+# A4 - Expired approval reuse
+# --------------------------------------------------------------------------------------
+
+
+async def test_a4_an_expired_approval_cannot_authorize(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Human approval is a permission with a lifetime, not a permanent grant.
+
+    An approval that outlives its window is the most reusable credential in the system: it was
+    genuinely granted by a real approver, so nothing about it looks forged. The expiry is what
+    stops a purchase being authorized on the strength of a decision someone made last month about
+    circumstances that no longer hold.
+
+    The seeded approval is aged rather than a fresh one inserted, because a partial unique index
+    permits only one unconsumed approval per payment request. That index is itself part of the
+    defence, so working within it keeps the scenario honest about the real schema.
+    """
+
+    payment = seeded_fixture_data.payment
+    payment.state = "APPROVAL_REQUIRED"
+    approval = seeded_fixture_data.unconsumed_approval
+    approval.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    await async_session.flush()
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    with pytest.raises(ApprovalExpiredError):
+        await transition(
+            async_session,
+            payment,
+            "AUTHORIZED",
+            reason="a4-expired-approval",
+            correlation_id=uuid4(),
+            approval_id=approval.id,
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    consumed_at = await async_session.scalar(
+        select(Approval.consumed_at).where(Approval.id == approval.id)
+    )
+    assert consumed_at is None, (
+        "a refused approval was consumed anyway, which would hide the reuse from the next attempt"
+    )
+    assert_attack_gained_no_authority(before, after)
+
+
+async def test_a4_an_already_consumed_approval_cannot_authorize_again(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Single use is enforced by the stored consumption mark, not by the caller's discipline.
+
+    The approval here is unexpired and was genuinely granted. Only the fact that it has already
+    been spent stands between it and a second authorization.
+    """
+
+    payment = seeded_fixture_data.payment
+    payment.state = "APPROVAL_REQUIRED"
+    approval = seeded_fixture_data.consumed_approval
+    approval.expires_at = datetime.now(UTC) + timedelta(minutes=15)
+    await async_session.flush()
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    with pytest.raises(ApprovalAlreadyConsumedError):
+        await transition(
+            async_session,
+            payment,
+            "AUTHORIZED",
+            reason="a4-replayed-approval",
+            correlation_id=uuid4(),
+            approval_id=approval.id,
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert_attack_gained_no_authority(before, after)
+
+
+# --------------------------------------------------------------------------------------
+# A9 - Out-of-order provider events
+# --------------------------------------------------------------------------------------
+
+
+async def test_a9_a_capture_cannot_precede_an_authorization(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Arrival order is the provider's; legality is ours.
+
+    Webhooks are not ordered. A capture that arrives before the authorization it belongs to must be
+    refused rather than applied, because accepting it would let a payment reach CAPTURED without
+    ever passing through the state where authority was checked.
+    """
+
+    payment = seeded_fixture_data.payment
+    payment.state = "CREATED"
+    await async_session.flush()
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    with pytest.raises(IllegalTransitionError):
+        await transition(
+            async_session,
+            payment,
+            "CAPTURED",
+            reason="a9-out-of-order-capture",
+            correlation_id=uuid4(),
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert_attack_gained_no_authority(before, after)
+
+
+async def test_a9_a_terminal_payment_accepts_no_further_provider_outcome(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """A late event about a settled payment cannot revive it.
+
+    DENIED is terminal by construction: its legal successor set is empty, so a provider event
+    arriving afterwards has nowhere to move the payment. This is a property of the transition table
+    rather than of any handler, which is why the table is asserted alongside the refusal.
+    """
+
+    payment = seeded_fixture_data.payment
+    payment.state = "DENIED"
+    await async_session.flush()
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    assert LEGAL_TRANSITIONS["DENIED"] == frozenset()
+    with pytest.raises(IllegalTransitionError):
+        await transition(
+            async_session,
+            payment,
+            "AUTHORIZED",
+            reason="a9-late-event-on-terminal-payment",
+            correlation_id=uuid4(),
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert_attack_gained_no_authority(before, after)
+
+
+# --------------------------------------------------------------------------------------
+# A10 - Double refund
+# --------------------------------------------------------------------------------------
+
+
+async def test_a10_no_surface_anywhere_can_initiate_a_refund() -> None:
+    """The refund story starts with the fact that nothing can start one.
+
+    This project authorizes purchases; it never moves money back. Rather than trusting that no
+    route was written, the assertion is made against the app's own route table and the MCP tool
+    list, so adding a refund endpoint later fails here instead of quietly widening what an agent
+    can reach.
+    """
+
+    server = create_mcp_server()
+    tools = await server.list_tools()
+    assert tools, "no MCP tools were exposed, so this proves nothing"
+    assert not {tool.name for tool in tools if "refund" in tool.name.lower()}
+
+    refund_routes = [path for path in _registered_paths(app) if "refund" in path.lower()]
+    assert not refund_routes, f"a refund-initiating route now exists: {refund_routes}"
+
+
+async def test_a10_a_refund_total_cannot_exceed_what_was_captured(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The ledger invariant holds even if a refund path is added later.
+
+    The guard lives in `validate_transition`, so it applies to every route that could ever move a
+    payment rather than to the one that happens to exist. A second refund of an already fully
+    refunded capture is the concrete case: both refunds are individually plausible and only their
+    total is wrong.
+    """
+
+    payment = seeded_fixture_data.payment
+    payment.state = "CAPTURED"
+    payment.authorized_amount_minor = 50_000
+    payment.captured_amount_minor = 50_000
+    payment.refunded_amount_minor = 50_000
+    await async_session.flush()
+
+    # A second refund of the same capture pushes the running total past it.
+    payment.refunded_amount_minor = 100_000
+
+    with pytest.raises(RefundExceedsCapturedError):
+        validate_transition(payment, "REFUNDED")
+
+
+# --------------------------------------------------------------------------------------
+# A6, A7, A8, A14 - Provider webhook authenticity, integrity, replay, and freshness
+# --------------------------------------------------------------------------------------
+
+# Synthetic. The linter rule that flags assigned secrets exists to catch real credentials, so it is
+# suppressed on the line rather than for the file.
+SCENARIO_WEBHOOK_SECRET = "tier-a-webhook-secret"  # noqa: S105
+SCENARIO_ORDER_AMOUNT = 39_900
+
+
+@pytest_asyncio.fixture
+async def webhook_client(
+    async_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[AsyncClient]:
+    monkeypatch.setenv("RAZORPAY_WEBHOOK_SECRET", SCENARIO_WEBHOOK_SECRET)
+    monkeypatch.setenv("RAZORPAY_KEY_ID", "rzp_test_public")
+    monkeypatch.setenv("RAZORPAY_KEY_SECRET", "test-secret")
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        yield async_session
+
+    app.dependency_overrides[get_session] = override_session
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        yield http
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def provider_order(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> RazorpayOrder:
+    """An authorized payment with a confirmed provider order, as the order route would leave it."""
+
+    request = PaymentRequest(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        actor_id=seeded_fixture_data.tenant_a_actor_one,
+        merchant_id=seeded_fixture_data.tenant_a_allowed_merchant.id,
+        amount_minor=SCENARIO_ORDER_AMOUNT,
+        currency="INR",
+        order_ref=f"order-{uuid4()}",
+        idempotency_key=str(uuid4()),
+    )
+    async_session.add(request)
+    await async_session.flush()
+    payment = Payment(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        payment_request_id=request.id,
+        state="AUTHORIZED",
+        authorized_amount_minor=SCENARIO_ORDER_AMOUNT,
+        captured_amount_minor=0,
+        refunded_amount_minor=0,
+    )
+    async_session.add(payment)
+    await async_session.flush()
+    authority = CheckoutAuthority(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        payment_request_id=request.id,
+        payment_id=payment.id,
+        approval_id=None,
+        policy_version=seeded_fixture_data.tenant_a_policy.version,
+        snapshot_hash="c" * 64,
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        used_at=datetime.now(UTC),
+    )
+    async_session.add(authority)
+    await async_session.flush()
+    order = RazorpayOrder(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        checkout_authority_id=authority.id,
+        payment_id=payment.id,
+        razorpay_order_id=f"order_{uuid4().hex[:14]}",
+        provider_state="CONFIRMED",
+        receipt=f"tg_{authority.id.hex}",
+        amount_minor=SCENARIO_ORDER_AMOUNT,
+        currency="INR",
+    )
+    async_session.add(order)
+    await async_session.flush()
+    return order
+
+
+def _event_body(
+    order_id: str,
+    *,
+    event: str = "payment.captured",
+    payment_id: str | None = None,
+    created_at: int | None = None,
+) -> bytes:
+    return json.dumps(
+        {
+            "entity": "event",
+            "event": event,
+            "created_at": int(datetime.now(UTC).timestamp()) if created_at is None else created_at,
+            "contains": ["payment"],
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": payment_id or f"pay_{uuid4().hex[:14]}",
+                        "order_id": order_id,
+                        "amount": SCENARIO_ORDER_AMOUNT,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+
+
+def _sign(body: bytes) -> str:
+    return hmac.new(SCENARIO_WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+
+
+def _webhook_headers(body: bytes, *, signature: str | None = None) -> dict[str, str]:
+    return {
+        "Content-Type": "application/json",
+        "X-Razorpay-Signature": _sign(body) if signature is None else signature,
+        "X-Razorpay-Event-Id": f"evt_{uuid4().hex[:16]}",
+    }
+
+
+async def test_a6_a_forged_signature_is_refused(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+) -> None:
+    """A webhook is an instruction from outside, so authenticity is checked before anything else.
+
+    The body here is entirely well-formed and names a real order. Only the signature is wrong,
+    which is exactly the position an attacker who has learned an order id but not the signing
+    secret is in.
+    """
+
+    body = _event_body(provider_order.razorpay_order_id)
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await webhook_client.post(
+        "/api/v1/razorpay/webhook",
+        content=body,
+        headers=_webhook_headers(body, signature="0" * 64),
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_SIGNATURE_INVALID"
+    assert after.payment_states == before.payment_states
+
+
+async def test_a6_an_unsigned_event_is_refused(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+) -> None:
+    """A missing signature is refused rather than treated as nothing to verify."""
+
+    body = _event_body(provider_order.razorpay_order_id)
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await webhook_client.post(
+        "/api/v1/razorpay/webhook",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_SIGNATURE_INVALID"
+    assert after.payment_states == before.payment_states
+
+
+async def test_a7_a_body_altered_after_signing_no_longer_verifies(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+) -> None:
+    """The signature covers the exact bytes, so tampering is detected rather than tolerated.
+
+    This is the interesting half of A6: the attacker holds a genuinely signed event and changes one
+    field in it. Raising the reported amount is the profitable edit, and it fails because the
+    signature was computed over the original bytes and the server verifies before it parses.
+    """
+
+    original = _event_body(provider_order.razorpay_order_id)
+    signature = _sign(original)
+    tampered = original.replace(
+        f'"amount":{SCENARIO_ORDER_AMOUNT}'.encode(),
+        b'"amount":1',
+    )
+    assert tampered != original, "the tamper did not change the body, so this proves nothing"
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await webhook_client.post(
+        "/api/v1/razorpay/webhook",
+        content=tampered,
+        headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": signature,
+            "X-Razorpay-Event-Id": f"evt_{uuid4().hex[:16]}",
+        },
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_SIGNATURE_INVALID"
+    assert after.payment_states == before.payment_states
+
+
+async def test_a8_a_replayed_event_does_not_transition_the_payment_twice(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+) -> None:
+    """A duplicate delivery is authentic, in window, and must still change nothing.
+
+    Providers retry, and networks duplicate. The same signed bytes with the same event id are
+    replayed here, so nothing distinguishes the second delivery from the first except that it has
+    already been applied. Identity is stored, so the second is refused by the database rather than
+    by whichever handler happens to look.
+    """
+
+    # payment.authorized, because the payment is AUTHORIZED and a capture from there is refused as
+    # out of order by A9. Replay is the property under test, so the first delivery has to succeed.
+    body = _event_body(provider_order.razorpay_order_id, event="payment.authorized")
+    headers = _webhook_headers(body)
+
+    first = await webhook_client.post("/api/v1/razorpay/webhook", content=body, headers=headers)
+    assert first.status_code == 202, first.text
+    after_first = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    second = await webhook_client.post("/api/v1/razorpay/webhook", content=body, headers=headers)
+
+    after_second = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    transitions = await async_session.scalar(
+        select(func.count())
+        .select_from(AuditEvent)
+        .where(
+            AuditEvent.tenant_id == seeded_fixture_data.tenant_a.id,
+            AuditEvent.event_kind == "payment_transition",
+            AuditEvent.payment_id == provider_order.payment_id,
+        )
+    )
+
+    assert second.status_code == 409, second.text
+    assert second.json()["detail"] == "RAZORPAY_WEBHOOK_DUPLICATE_EVENT"
+    assert after_second.payment_states == after_first.payment_states
+    assert transitions == 1, f"the replay produced {transitions} transitions"
+
+
+async def test_a14_a_stale_signed_event_is_refused(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid signature proves origin, not recency.
+
+    Without a bound, a captured event is a permanent credential: anything able to replay bytes from
+    a log or an old environment could apply them at any future moment. The window is configured
+    tightly here so the test does not depend on the shipped default, and the event is otherwise
+    perfect - correctly signed, real order, fresh event id.
+    """
+
+    monkeypatch.setenv("RAZORPAY_WEBHOOK_MAX_AGE_SECONDS", "60")
+    stale = int((datetime.now(UTC) - timedelta(hours=2)).timestamp())
+    body = _event_body(provider_order.razorpay_order_id, created_at=stale)
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await webhook_client.post(
+        "/api/v1/razorpay/webhook", content=body, headers=_webhook_headers(body)
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_STALE"
+    assert after.payment_states == before.payment_states
+
+
+async def test_a14_a_post_dated_event_cannot_extend_its_own_validity(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+) -> None:
+    """Stamping an event into the future would defeat the age bound, so it is refused.
+
+    Backward tolerance has to be generous because providers retry. Forward tolerance does not:
+    clock skew explains minutes, and nothing legitimate explains an event dated hours ahead. Only
+    the timestamp is unusual here, and it is inside the signed body, so this is the shape a
+    tamper-then-resign attempt would take if the secret ever leaked.
+    """
+
+    post_dated = int((datetime.now(UTC) + timedelta(hours=6)).timestamp())
+    body = _event_body(provider_order.razorpay_order_id, created_at=post_dated)
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await webhook_client.post(
+        "/api/v1/razorpay/webhook", content=body, headers=_webhook_headers(body)
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_POST_DATED"
+    assert after.payment_states == before.payment_states
+
+
+async def test_a14_an_event_with_no_timestamp_is_refused_rather_than_exempted(
+    webhook_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    provider_order: RazorpayOrder,
+) -> None:
+    """An event that cannot be dated cannot be bounded, so it fails closed.
+
+    Treating a missing timestamp as "nothing to check" would hand every replay a trivial bypass:
+    drop the field and the window disappears. It carries its own reason code so an operator can
+    tell a provider payload change apart from an attack.
+    """
+
+    body = json.dumps(
+        {
+            "entity": "event",
+            "event": "payment.captured",
+            "contains": ["payment"],
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": f"pay_{uuid4().hex[:14]}",
+                        "order_id": provider_order.razorpay_order_id,
+                        "amount": SCENARIO_ORDER_AMOUNT,
+                        "currency": "INR",
+                        "status": "captured",
+                    }
+                }
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await webhook_client.post(
+        "/api/v1/razorpay/webhook", content=body, headers=_webhook_headers(body)
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_TIMESTAMP_MISSING"
+    assert after.payment_states == before.payment_states
+
+
+# --------------------------------------------------------------------------------------
+# A13 - TOCTOU policy change between authorization and use
+# --------------------------------------------------------------------------------------
+
+
+async def _authority_bound_to_current_policy(
+    session: AsyncSession, data: FixtureData
+) -> tuple[CheckoutAuthority, Payment]:
+    """An authority that would genuinely succeed if nothing drifted.
+
+    Built against the live policy version and the real snapshot hash so that the only thing a
+    scenario changes afterwards is the one fact under test. An authority that was invalid to begin
+    with would pass every rejection assertion while proving nothing.
+    """
+
+    request = PaymentRequest(
+        id=uuid4(),
+        tenant_id=data.tenant_a.id,
+        actor_id=data.tenant_a_actor_one,
+        merchant_id=data.tenant_a_allowed_merchant.id,
+        amount_minor=25_000,
+        currency="INR",
+        order_ref=f"order-{uuid4()}",
+        idempotency_key=str(uuid4()),
+    )
+    session.add(request)
+    await session.flush()
+    payment = Payment(
+        id=uuid4(),
+        tenant_id=data.tenant_a.id,
+        payment_request_id=request.id,
+        state="AUTHORIZED",
+        authorized_amount_minor=25_000,
+        captured_amount_minor=0,
+        refunded_amount_minor=0,
+    )
+    session.add(payment)
+    await session.flush()
+    authority = CheckoutAuthority(
+        id=uuid4(),
+        tenant_id=data.tenant_a.id,
+        payment_request_id=request.id,
+        payment_id=payment.id,
+        approval_id=None,
+        policy_version=data.tenant_a_policy.version,
+        snapshot_hash=_snapshot_hash(request, data.tenant_a_policy.version),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    session.add(authority)
+    await session.flush()
+    return authority, payment
+
+
+async def test_a13_an_authority_is_valid_until_the_policy_under_it_moves(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The control group: with nothing drifting, this exact authority is consumable.
+
+    Registered as part of A13 rather than kept as a local sanity check, because the rejection tests
+    below are only meaningful if the thing they reject would otherwise have worked.
+    """
+
+    authority, _ = await _authority_bound_to_current_policy(async_session, seeded_fixture_data)
+
+    consumed = await consume_checkout_authority(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        checkout_authority_id=authority.id,
+        correlation_id=uuid4(),
+    )
+
+    assert consumed.used_at is not None
+
+
+async def test_a13_a_policy_published_after_authorization_revokes_the_authority(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Authorization is a decision about a policy, and it does not outlive that policy.
+
+    The window between deciding and spending is where this bites. An operator tightens a limit, or
+    removes a merchant, in the fifteen minutes an authority is live. The authority was honestly
+    issued and has not expired or been used, so nothing about it looks stale - except that the
+    rules it was checked against are no longer the rules in force.
+
+    Rejecting on version rather than on re-derived limits is deliberate: it fails closed for any
+    change, including ones nobody thought to compare.
+    """
+
+    authority, _ = await _authority_bound_to_current_policy(async_session, seeded_fixture_data)
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    superseding = SpendingPolicy(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        version=seeded_fixture_data.tenant_a_policy.version + 1,
+        max_amount_minor=seeded_fixture_data.tenant_a_policy.max_amount_minor,
+        currency=seeded_fixture_data.tenant_a_policy.currency,
+        max_daily_spend_minor=seeded_fixture_data.tenant_a_policy.max_daily_spend_minor,
+        approval_required_above_minor=(
+            seeded_fixture_data.tenant_a_policy.approval_required_above_minor
+        ),
+        expiry=datetime.now(UTC) + timedelta(days=30),
+    )
+    async_session.add(superseding)
+    await async_session.flush()
+
+    with pytest.raises(CheckoutAuthorityUnavailableError) as raised:
+        await consume_checkout_authority(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            checkout_authority_id=authority.id,
+            correlation_id=uuid4(),
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    used_at = await async_session.scalar(
+        select(CheckoutAuthority.used_at).where(CheckoutAuthority.id == authority.id)
+    )
+    assert raised.value.reason == "CHECKOUT_AUTHORITY_POLICY_DRIFT"
+    assert used_at is None, "a refused authority was marked used, silently burning it"
+    assert after.consumed_authority_ids == before.consumed_authority_ids
+    assert_attack_created_nothing(before, after)
+
+
+async def test_a13_an_amount_edited_after_authorization_breaks_the_snapshot_hash(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The second drift vector: the policy holds still and the purchase changes underneath it.
+
+    A version check alone would not see this, because the policy never moved. The authority is
+    bound to a hash of the exact purchase it was issued for, so editing the amount afterwards
+    invalidates it without anyone needing to enumerate which fields matter.
+    """
+
+    authority, payment = await _authority_bound_to_current_policy(
+        async_session, seeded_fixture_data
+    )
+    request = await async_session.scalar(
+        select(PaymentRequest).where(PaymentRequest.id == authority.payment_request_id)
+    )
+    assert request is not None
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    request.amount_minor = 250_000
+    await async_session.flush()
+
+    with pytest.raises(CheckoutAuthorityUnavailableError) as raised:
+        await consume_checkout_authority(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            checkout_authority_id=authority.id,
+            correlation_id=uuid4(),
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert raised.value.reason == "CHECKOUT_AUTHORITY_POLICY_DRIFT"
+    assert after.consumed_authority_ids == before.consumed_authority_ids

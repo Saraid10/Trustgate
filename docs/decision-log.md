@@ -674,3 +674,59 @@ and it fails at the moment the rule is broken rather than months later under con
 third test earned its place immediately by catching two packages omitted from the scan list when it
 was first written.
 **Slice:** A — verification of the verification
+
+## 2026-08-26: A Signed Webhook Is Bounded in Time, Generously
+**Decision:** A Razorpay webhook is refused if its signed `created_at` is older than
+`RAZORPAY_WEBHOOK_MAX_AGE_SECONDS` (default 24 hours), more than five minutes in the future, or
+absent. The check runs after signature verification and before any lookup.
+**Alternatives considered:** No freshness check, relying on provider event dedupe alone; a tight
+Stripe-style five-minute tolerance; reading the timestamp from a header.
+**Rationale:** A signature proves Razorpay produced the event. It does not prove Razorpay produced
+it recently, so without a bound a captured event is a permanent credential and anything able to
+replay bytes from a log, a proxy, or an old environment holds one indefinitely.
+
+The window cannot be tightened freely, and this is the part worth stating plainly. A provider
+retries a webhook it could not deliver, and rejecting a late retry drops a real payment outcome:
+money moved and the system never learns. That failure is strictly worse than the replay this
+bounds, because duplicate delivery is already refused exactly and permanently by the unique index
+on `provider_event_id`. The freshness window is therefore defence in depth over a dedupe that is
+already correct, and it is set generously on purpose. Copying a five-minute tolerance from a
+provider with different retry behaviour would have traded a real availability failure for a
+marginal security gain. This project has not verified Razorpay's documented retry schedule, so the
+default is conservative and configurable rather than presented as tuned.
+
+The tolerances are deliberately asymmetric. Backward tolerance is generous because retries are
+legitimate; forward tolerance is five minutes because clock skew explains minutes and nothing
+legitimate explains an event dated further ahead. Accepting a post-dated event would let a
+signature carry validity past the window this exists to impose.
+
+The timestamp is read from the signed body rather than a header, because a header sits outside the
+HMAC and anything able to replay the event could rewrite it. A missing timestamp is refused with
+its own reason code rather than as a malformed body, so an operator can tell a provider payload
+change apart from an attack.
+**Slice:** B - A14, the one Tier A scenario with no existing enforcement
+
+## 2026-08-26: The Attack Matrix Is Completed by Registering What Already Held
+**Decision:** All eleven remaining Tier A scenarios are implemented and registered. Ten of them
+tested enforcement that already existed; only A14 required new code.
+**Alternatives considered:** Implement only the scenarios that would find new defects; leave the
+already-enforced ones documented as covered by unit tests.
+**Rationale:** An unregistered defence is one nobody can point at, and more importantly one nobody
+notices losing. The A9 transition table, the A6 raw-byte HMAC, and the A13 policy-version check
+were all correct before this slice and none of them had a test framed as the attack they defeat.
+Framing matters here beyond presentation: a scenario asserts the attack was refused, that no
+provider order was created, and that no payment gained authority, which is three claims where a
+unit test made one.
+
+Writing them also corrected two claims the build plan had made loosely. A3 was listed as "currency
+derives server-side"; the agent surface has no currency field at all, and the one route that
+accepts one is disabled by default, which is a stronger and differently shaped defence than the
+plan described. A10 was listed as "double refund"; there is no refund path anywhere in the project,
+so the honest scenario asserts that no surface can initiate a refund - checked against the live
+route table and tool list rather than against memory - alongside the ledger invariant that would
+apply if one were added.
+
+A13 registers a control case that succeeds. A rejection test proves nothing unless the thing being
+rejected would otherwise have worked, and an authority built wrong would satisfy every rejection
+assertion while testing nothing.
+**Slice:** B - Tier A completion

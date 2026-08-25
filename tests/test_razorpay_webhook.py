@@ -13,6 +13,7 @@ import hmac
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -112,11 +113,25 @@ async def order(async_session: AsyncSession, seeded_fixture_data: FixtureData) -
     return provider_order
 
 
-def _body(order_id: str, *, event: str = "payment.captured", amount: int = ORDER_AMOUNT) -> bytes:
+# A signed event with no timestamp is refused, so the builders stamp "now" by default and keep
+# that distinguishable from a test deliberately sending no timestamp at all.
+_UNSET_TIMESTAMP: Any = object()
+
+
+def _body(
+    order_id: str,
+    *,
+    event: str = "payment.captured",
+    amount: int = ORDER_AMOUNT,
+    created_at: int | None = _UNSET_TIMESTAMP,
+) -> bytes:
     return json.dumps(
         {
             "entity": "event",
             "event": event,
+            "created_at": int(datetime.now(UTC).timestamp())
+            if created_at is _UNSET_TIMESTAMP
+            else created_at,
             "contains": ["payment"],
             "payload": {
                 "payment": {
@@ -309,7 +324,12 @@ async def test_a_missing_signature_header_is_refused(
 
 
 def _body_for_payment(
-    order_id: str, payment_id: str, *, event: str, amount: int = ORDER_AMOUNT
+    order_id: str,
+    payment_id: str,
+    *,
+    event: str,
+    amount: int = ORDER_AMOUNT,
+    created_at: int | None = _UNSET_TIMESTAMP,
 ) -> bytes:
     """Build an event for a specific payment id.
 
@@ -322,6 +342,9 @@ def _body_for_payment(
         {
             "entity": "event",
             "event": event,
+            "created_at": int(datetime.now(UTC).timestamp())
+            if created_at is _UNSET_TIMESTAMP
+            else created_at,
             "contains": ["payment"],
             "payload": {
                 "payment": {

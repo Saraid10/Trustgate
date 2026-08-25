@@ -45,6 +45,31 @@ REGISTRY: tuple[Scenario, ...] = (
         ),
     ),
     Scenario(
+        id="A3",
+        title="Currency substitution",
+        invariant=(
+            "Currency is derived from the catalog item, and the one route that accepts a currency "
+            "is disabled by default and denies a mismatch against the active policy when enabled."
+        ),
+        test_names=(
+            "test_a3_the_agent_surface_derives_currency_and_cannot_be_told_one",
+            "test_a3_the_only_currency_accepting_route_is_disabled_by_default",
+            "test_a3_an_enabled_legacy_route_still_denies_a_currency_outside_the_policy",
+        ),
+    ),
+    Scenario(
+        id="A4",
+        title="Expired or reused approval",
+        invariant=(
+            "An approval is a permission with a lifetime and a single use. Neither an expired one "
+            "nor an already consumed one can authorize, and a refused approval is not burned."
+        ),
+        test_names=(
+            "test_a4_an_expired_approval_cannot_authorize",
+            "test_a4_an_already_consumed_approval_cannot_authorize_again",
+        ),
+    ),
+    Scenario(
         id="A5",
         title="Self-approval",
         invariant=(
@@ -54,6 +79,72 @@ REGISTRY: tuple[Scenario, ...] = (
         test_names=(
             "test_a5_an_approval_cannot_be_granted_by_the_requesting_actor",
             "test_a5_a_separate_approver_can_still_grant",
+        ),
+    ),
+    Scenario(
+        id="A6",
+        title="Forged webhook signature",
+        invariant=(
+            "Provider events are authenticated by raw-byte HMAC before the body is parsed. A "
+            "forged or absent signature changes nothing, however well-formed the event is."
+        ),
+        test_names=(
+            "test_a6_a_forged_signature_is_refused",
+            "test_a6_an_unsigned_event_is_refused",
+        ),
+    ),
+    Scenario(
+        id="A7",
+        title="Tampered webhook body",
+        invariant=(
+            "The signature covers the exact bytes received, so a genuinely signed event edited in "
+            "flight no longer verifies and never reaches a payment."
+        ),
+        test_names=("test_a7_a_body_altered_after_signing_no_longer_verifies",),
+    ),
+    Scenario(
+        id="A8",
+        title="Duplicate webhook delivery",
+        invariant=(
+            "Provider event identity is stored, so a replay of an authentic, in-window event is "
+            "refused by the database rather than by whichever handler happens to look."
+        ),
+        test_names=("test_a8_a_replayed_event_does_not_transition_the_payment_twice",),
+    ),
+    Scenario(
+        id="A9",
+        title="Out-of-order provider events",
+        invariant=(
+            "Arrival order is the provider's and legality is ours. A capture cannot precede its "
+            "authorization, and a terminal payment accepts no further outcome."
+        ),
+        test_names=(
+            "test_a9_a_capture_cannot_precede_an_authorization",
+            "test_a9_a_terminal_payment_accepts_no_further_provider_outcome",
+        ),
+    ),
+    Scenario(
+        id="A10",
+        title="Double refund",
+        invariant=(
+            "No surface can initiate a refund at all, asserted against the live route table and "
+            "tool list, and the ledger invariant refuses a refund total exceeding the capture."
+        ),
+        test_names=(
+            "test_a10_no_surface_anywhere_can_initiate_a_refund",
+            "test_a10_a_refund_total_cannot_exceed_what_was_captured",
+        ),
+    ),
+    Scenario(
+        id="A11a",
+        title="Unknown tenant header",
+        invariant=(
+            "A tenant that does not resolve is refused before any route body runs, and the refusal "
+            "discloses nothing that would let a caller enumerate which tenants exist."
+        ),
+        test_names=(
+            "test_a11a_an_unknown_tenant_header_is_refused",
+            "test_a11a_an_unknown_tenant_is_indistinguishable_from_a_forbidden_one",
         ),
     ),
     Scenario(
@@ -67,6 +158,42 @@ REGISTRY: tuple[Scenario, ...] = (
             "test_a11b_checkout_authority_route_refuses_another_tenants_request",
             "test_a11b_razorpay_route_refuses_another_tenants_authority",
             "test_a11b_mcp_refuses_another_tenants_payment",
+        ),
+    ),
+    Scenario(
+        id="A12",
+        title="Idempotency key collision",
+        invariant=(
+            "A key reused with a different purchase returns the original decision and a 409. The "
+            "second purchase is never created and cannot be mistaken for one that was accepted."
+        ),
+        test_names=("test_a12_a_reused_key_with_a_different_purchase_returns_the_first_decision",),
+    ),
+    Scenario(
+        id="A13",
+        title="Policy drift between authorization and use",
+        invariant=(
+            "An authority does not outlive the policy it was checked against, nor the purchase it "
+            "was issued for. A superseding policy or an edited amount revokes it without burning "
+            "it, and an undrifted authority still works."
+        ),
+        test_names=(
+            "test_a13_an_authority_is_valid_until_the_policy_under_it_moves",
+            "test_a13_a_policy_published_after_authorization_revokes_the_authority",
+            "test_a13_an_amount_edited_after_authorization_breaks_the_snapshot_hash",
+        ),
+    ),
+    Scenario(
+        id="A14",
+        title="Stale or post-dated webhook",
+        invariant=(
+            "A signature proves origin, not recency. An event outside the freshness window, dated "
+            "into the future, or carrying no timestamp at all is refused before any lookup."
+        ),
+        test_names=(
+            "test_a14_a_stale_signed_event_is_refused",
+            "test_a14_a_post_dated_event_cannot_extend_its_own_validity",
+            "test_a14_an_event_with_no_timestamp_is_refused_rather_than_exempted",
         ),
     ),
     Scenario(

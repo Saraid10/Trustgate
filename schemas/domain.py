@@ -434,6 +434,11 @@ class RazorpayWebhookEvent(BaseModel):
 
     event: Annotated[str, Field(min_length=1, max_length=64)]
     payload: RazorpayWebhookPayload
+    # Optional in the schema and required by the route, which is deliberate. A signed event with no
+    # timestamp cannot be bounded in time, so it is refused - but it is refused with its own reason
+    # code rather than as a malformed body, so an operator can tell "the provider changed shape"
+    # apart from "someone posted garbage".
+    created_at: int | None = None
 
     @property
     def payment_entity(self) -> RazorpayWebhookPaymentEntity | None:

@@ -70,6 +70,6 @@ No migration was added in this slice, so the migration round-trip gate is unchan
 
 ## Scope
 
-A1, A2, A11b, and A15 only. A3-A14 remain unimplemented and the README states this explicitly.
+A1, A2, A11b, and A15 at the time of M2. The remaining Tier A scenarios were implemented in Slice B; the README matrix is generated from the registry and is the current record.
 Several of the remaining scenarios are more useful once the evidence receipt exists, so they are
 scheduled for M5.

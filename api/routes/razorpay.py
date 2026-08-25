@@ -495,6 +495,72 @@ def _webhook_secret() -> str:
     return secret
 
 
+# How far in the past a signed webhook may claim to have been created and still be acted on.
+#
+# A signature proves Razorpay produced this event. It does not prove Razorpay produced it recently,
+# so without a bound a captured event stays valid forever: anything that can replay bytes from a
+# log, a proxy, or an old staging environment holds a permanent credential.
+#
+# The window cannot be tightened freely. A provider retries a webhook it could not deliver, and
+# rejecting a late retry drops a real payment outcome - money moved and the system never learns.
+# That failure is worse than the replay this bounds, because duplicate delivery is already refused
+# exactly and permanently by the unique index on `provider_event_id`. The window is therefore
+# defence in depth over a dedupe that is already correct, and it is set generously on purpose: the
+# floor is the provider's retry horizon, not how tight a number looks.
+#
+# This project has not verified Razorpay's documented retry schedule, so the default is
+# deliberately conservative and `RAZORPAY_WEBHOOK_MAX_AGE_SECONDS` overrides it. Operators who know
+# their provider's schedule should lower it.
+_DEFAULT_WEBHOOK_MAX_AGE_SECONDS = 24 * 60 * 60
+
+# Forward tolerance is tight because the asymmetry is real: clock skew explains a few minutes, and
+# nothing legitimate explains an event stamped further ahead. Accepting a post-dated event would
+# let a signature carry validity past the window above, which is the bound this exists to impose.
+_WEBHOOK_FUTURE_TOLERANCE_SECONDS = 5 * 60
+
+
+def _webhook_max_age_seconds() -> int:
+    configured = os.getenv("RAZORPAY_WEBHOOK_MAX_AGE_SECONDS")
+    if configured is None:
+        return _DEFAULT_WEBHOOK_MAX_AGE_SECONDS
+    try:
+        parsed = int(configured)
+    except ValueError:
+        parsed = 0
+    if parsed <= 0:
+        # An unset window is not a disabled check. A misconfigured value falls back to the default
+        # rather than accepting events of any age.
+        logger.warning(
+            json.dumps(
+                {
+                    "reason": "RAZORPAY_WEBHOOK_MAX_AGE_INVALID",
+                    "configured": configured,
+                    "using_default_seconds": _DEFAULT_WEBHOOK_MAX_AGE_SECONDS,
+                }
+            )
+        )
+        return _DEFAULT_WEBHOOK_MAX_AGE_SECONDS
+    return parsed
+
+
+def webhook_timestamp_rejection(created_at: int | None, *, now: datetime) -> str | None:
+    """Return the reason a signed event's timestamp is unusable, or None if it is in window.
+
+    The timestamp is read from the signed body rather than a header. A header sits outside the
+    HMAC, so anything that could replay the event could also rewrite the header and defeat the
+    check entirely.
+    """
+
+    if created_at is None:
+        return "RAZORPAY_WEBHOOK_TIMESTAMP_MISSING"
+    age_seconds = now.timestamp() - created_at
+    if age_seconds > _webhook_max_age_seconds():
+        return "RAZORPAY_WEBHOOK_STALE"
+    if age_seconds < -_WEBHOOK_FUTURE_TOLERANCE_SECONDS:
+        return "RAZORPAY_WEBHOOK_POST_DATED"
+    return None
+
+
 def _log_unattributed_webhook_rejection(request: Request, raw_body: bytes, reason: str) -> None:
     """Record a pre-verification rejection without inventing a tenant.
 
@@ -592,6 +658,15 @@ async def receive_razorpay_webhook(
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": "RAZORPAY_WEBHOOK_MALFORMED"},
+        )
+
+    stale_reason = webhook_timestamp_rejection(event.created_at, now=datetime.now(UTC))
+    if stale_reason is not None:
+        # After the signature and before any lookup: the event is authentic but out of window, so
+        # nothing about it may reach a payment.
+        _log_unattributed_webhook_rejection(request, raw_body, stale_reason)
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST, content={"detail": stale_reason}
         )
 
     entity = event.payment_entity
