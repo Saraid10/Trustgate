@@ -443,3 +443,22 @@ discover what already exists. Duplicate matches are escalated rather than resolv
 because choosing between two real orders is not a decision to make without a human, and that state
 is reachable in practice given the provider permits duplicate receipts.
 **Slice:** M3 Razorpay Test Mode flow
+
+## 2026-08-25: The Checkout Page Renders and Never Authorizes
+**Decision:** Serve Standard Checkout from `GET /api/v1/razorpay/checkout/{razorpay_order_id}` for
+an order that already exists and is `CONFIRMED`. Loading the page consumes no authority, creates no
+provider order, and advances no payment. It carries the publishable key, the provider order id, and
+the server-derived amount, and nothing else.
+**Alternatives considered:** Create the order when the page loads; key the page on the checkout
+authority; require a tenant header; hold the amount in the page and submit it with the payment.
+**Rationale:** A page a browser can request is the least trusted surface in the system, so it must
+not be able to move money. Creating the order on load would let a page refresh consume an authority
+or trigger provider calls, which is the opposite of the property the authority mechanism exists to
+provide. The provider order identifier is unguessable and every value the page carries is already
+public to the browser by necessity, so a tenant header would add ceremony without adding a
+boundary. The amount is rendered for the customer but the payment is bound to the order the server
+created, so the browser cannot alter it.
+**On the browser result:** the page states plainly that completing it is not proof of payment. Its
+handler posts to the server for signature verification and reports only what the server concludes,
+and capture still waits on a signed provider event.
+**Slice:** M3 Razorpay Test Mode flow
