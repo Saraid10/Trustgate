@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from fixtures import FixtureData
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app import app
@@ -193,3 +194,67 @@ async def test_the_page_loads_checkout_from_razorpay(
     body = (await client.get(f"/api/v1/razorpay/checkout/{order.razorpay_order_id}")).text
 
     assert "https://checkout.razorpay.com/v1/checkout.js" in body
+
+
+HOSTILE_NAME = "</script><script>window.__pwned=1</script>"
+
+
+async def test_hostile_catalog_text_cannot_escape_the_script_block(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Catalog text is the untrusted vector this project exists to contain.
+
+    `json.dumps` emits `</script>` verbatim, so a catalog name carrying it would close the script
+    element and let whatever followed execute in the customer's browser.
+    """
+
+    order = await _confirmed_order(async_session, seeded_fixture_data)
+    purchase = await async_session.scalar(
+        select(PaymentRequest)
+        .join(
+            CheckoutAuthority,
+            CheckoutAuthority.payment_request_id == PaymentRequest.id,
+        )
+        .where(CheckoutAuthority.id == order.checkout_authority_id)
+    )
+    assert purchase is not None
+    purchase.catalog_name = HOSTILE_NAME
+    await async_session.flush()
+
+    body = (await client.get(f"/api/v1/razorpay/checkout/{order.razorpay_order_id}")).text
+
+    # The payload appears nowhere as live markup, in the script block or the document body.
+    assert "<script>window.__pwned" not in body
+    assert "</script><script>" not in body
+    assert "\u003c/script\u003e" in body, "the name was not neutralised inside the script block"
+
+
+async def test_the_page_sends_a_script_nonce_policy(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Defence in depth: even injected markup would have no way to execute."""
+
+    order = await _confirmed_order(async_session, seeded_fixture_data)
+
+    response = await client.get(f"/api/v1/razorpay/checkout/{order.razorpay_order_id}")
+    policy = response.headers.get("Content-Security-Policy", "")
+
+    assert "script-src 'nonce-" in policy
+    assert "object-src 'none'" in policy
+    nonce = policy.split("script-src 'nonce-")[1].split("'")[0]
+    assert nonce, "the policy carries an empty nonce"
+    assert f'nonce="{nonce}"' in response.text, "the page scripts do not carry the policy nonce"
+
+
+async def test_each_render_uses_a_fresh_nonce(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """A reused nonce is no better than allowing inline scripts outright."""
+
+    order = await _confirmed_order(async_session, seeded_fixture_data)
+    path = f"/api/v1/razorpay/checkout/{order.razorpay_order_id}"
+
+    first = (await client.get(path)).headers["Content-Security-Policy"]
+    second = (await client.get(path)).headers["Content-Security-Policy"]
+
+    assert first != second

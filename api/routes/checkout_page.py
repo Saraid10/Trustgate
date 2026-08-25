@@ -14,6 +14,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,13 +28,60 @@ from models.domain import CheckoutAuthority, PaymentRequest, RazorpayOrder
 router = APIRouter(prefix="/api/v1/razorpay", tags=["razorpay test mode"])
 
 _CHECKOUT_SCRIPT = "https://checkout.razorpay.com/v1/checkout.js"
+_RAZORPAY_ORIGINS = "https://checkout.razorpay.com https://api.razorpay.com"
+
+
+def _content_security_policy(nonce: str) -> str:
+    """Defence in depth behind the escaping, not instead of it.
+
+    Scripts run only with this request's nonce or from Razorpay's own origin, so text that
+    somehow reached the document as markup still has no way to execute. Styles keep
+    `unsafe-inline` because Razorpay Checkout injects its own; tightening that would break the
+    payment flow without closing the hole this defends.
+    """
+
+    return (
+        "default-src 'self'; "
+        f"script-src 'nonce-{nonce}' {_RAZORPAY_ORIGINS}; "
+        f"frame-src {_RAZORPAY_ORIGINS}; "
+        f"connect-src 'self' {_RAZORPAY_ORIGINS}; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "base-uri 'none'; object-src 'none'; form-action 'none'"
+    )
 
 
 def _rupees(amount_minor: int) -> str:
     return f"{amount_minor / 100:,.2f}"
 
 
-def _render(*, key_id: str, order: RazorpayOrder, request: PaymentRequest | None) -> str:
+# Characters that can terminate or reopen a script element. `json.dumps` emits them verbatim,
+# so catalog text carrying `</script>` would close the element and let whatever follows run.
+# The line and paragraph separators are included because JavaScript treats them as line
+# terminators inside string literals even though JSON does not.
+_SCRIPT_ESCAPES = {
+    ord("<"): "\\u003c",
+    ord(">"): "\\u003e",
+    ord("&"): "\\u0026",
+    0x2028: "\\u2028",
+    0x2029: "\\u2029",
+}
+
+
+def _script_json(value: object) -> str:
+    """Serialise for embedding inside a `<script>` block.
+
+    Catalog text is the untrusted content this project exists to contain, which makes the
+    browser the last place to relax about it. Escaping to unicode form leaves the value
+    identical to JavaScript while making it unable to terminate the element.
+    """
+
+    return json.dumps(value).translate(_SCRIPT_ESCAPES)
+
+
+def _render(
+    *, key_id: str, order: RazorpayOrder, request: PaymentRequest | None, nonce: str
+) -> str:
     """Build the checkout page.
 
     Server-derived values are still escaped for HTML and encoded through `json.dumps` for the
@@ -47,7 +95,7 @@ def _render(*, key_id: str, order: RazorpayOrder, request: PaymentRequest | None
     quantity = request.quantity if request and request.quantity is not None else 1
     purpose = html.escape(request.purpose or "-") if request else "-"
     amount = _rupees(order.amount_minor)
-    options = json.dumps(
+    options = _script_json(
         {
             "key": key_id,
             "order_id": order.razorpay_order_id,
@@ -110,8 +158,8 @@ def _render(*, key_id: str, order: RazorpayOrder, request: PaymentRequest | None
     </p>
   </div>
 </div>
-<script src="{_CHECKOUT_SCRIPT}"></script>
-<script>
+<script nonce="{nonce}" src="{_CHECKOUT_SCRIPT}"></script>
+<script nonce="{nonce}">
 (function () {{
   var statusEl = document.getElementById("status");
   var payButton = document.getElementById("pay");
@@ -206,4 +254,8 @@ async def render_checkout_page(
             CheckoutAuthority.tenant_id == order.tenant_id,
         )
     )
-    return HTMLResponse(content=_render(key_id=key_id, order=order, request=purchase))
+    nonce = secrets.token_urlsafe(16)
+    return HTMLResponse(
+        content=_render(key_id=key_id, order=order, request=purchase, nonce=nonce),
+        headers={"Content-Security-Policy": _content_security_policy(nonce)},
+    )

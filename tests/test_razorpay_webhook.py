@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.app import app
 from api.database import get_session
 from models.domain import (
+    AuditEvent,
     CheckoutAuthority,
     Payment,
     PaymentRequest,
@@ -484,3 +485,105 @@ async def test_one_payment_with_distinct_event_ids_is_processed_twice(
         )
     )
     assert sorted(stored) == ["razorpay:evt_authorized_001", "razorpay:evt_captured_002"]
+
+
+async def test_a_failed_attempt_then_capture_on_the_same_payment_succeeds(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """Razorpay documents payment.failed followed by payment.captured.
+
+    Treating the first failure as terminal left the payment with no legal successor, so the real
+    capture that followed was refused.
+    """
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    for event in ("payment.authorized", "payment.failed", "payment.captured"):
+        b = _body_for_payment(order.razorpay_order_id, payment_id, event=event)
+        response = await client.post(
+            "/api/v1/razorpay/webhook",
+            content=b,
+            headers={
+                "X-Razorpay-Signature": _sign(b),
+                "X-Razorpay-Event-Id": f"evt_{event}",
+                "Content-Type": "application/json",
+            },
+        )
+        assert response.status_code == 202, f"{event} rejected: {response.json()}"
+
+    final = await async_session.scalar(select(Payment).where(Payment.id == order.payment_id))
+    assert final is not None and final.state == "CAPTURED"
+    assert final.captured_amount_minor == ORDER_AMOUNT
+
+
+async def test_a_retry_under_a_new_payment_id_still_captures(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """A UPI retry produces a different payment identifier for the same order."""
+
+    failed_attempt = f"pay_{uuid4().hex[:14]}"
+    retry = f"pay_{uuid4().hex[:14]}"
+
+    steps = [
+        (failed_attempt, "payment.authorized"),
+        (failed_attempt, "payment.failed"),
+        (retry, "payment.captured"),
+    ]
+    for payment_id, event in steps:
+        b = _body_for_payment(order.razorpay_order_id, payment_id, event=event)
+        response = await _post(client, b, _sign(b))
+        assert response.status_code == 202, f"{event} rejected: {response.json()}"
+
+    final = await async_session.scalar(select(Payment).where(Payment.id == order.payment_id))
+    assert final is not None and final.state == "CAPTURED"
+
+
+async def test_a_failed_attempt_is_recorded_without_moving_the_payment(
+    client: AsyncClient, async_session: AsyncSession, order: RazorpayOrder
+) -> None:
+    """The attempt is evidence, not a verdict."""
+
+    payment_id = f"pay_{uuid4().hex[:14]}"
+    authorized = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.authorized")
+    await _post(client, authorized, _sign(authorized))
+
+    failed = _body_for_payment(order.razorpay_order_id, payment_id, event="payment.failed")
+    response = await _post(client, failed, _sign(failed))
+
+    payment = await async_session.scalar(select(Payment).where(Payment.id == order.payment_id))
+    kinds = list(
+        await async_session.scalars(
+            select(AuditEvent.event_kind).where(
+                AuditEvent.event_kind == "razorpay_payment_attempt_failed"
+            )
+        )
+    )
+    events = list(
+        await async_session.scalars(
+            select(ProviderEvent.event_type).where(ProviderEvent.payment_id == order.payment_id)
+        )
+    )
+    assert response.status_code == 202
+    assert payment is not None and payment.state == "PROVIDER_PENDING"
+    assert kinds, "the failed attempt left no audit record"
+    assert "payment.failed" in events, "the failed attempt was not preserved as evidence"
+
+
+async def test_an_oversized_declared_length_is_refused_before_the_body_is_read(
+    client: AsyncClient, order: RazorpayOrder
+) -> None:
+    """Refuse on the declared size rather than buffering the payload first."""
+
+    body = _body(order.razorpay_order_id)
+
+    response = await client.post(
+        "/api/v1/razorpay/webhook",
+        content=body,
+        headers={
+            "X-Razorpay-Signature": _sign(body),
+            "Content-Type": "application/json",
+            "Content-Length": str(64 * 1024 + 1),
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "RAZORPAY_WEBHOOK_BODY_TOO_LARGE"

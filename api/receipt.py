@@ -218,8 +218,9 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
     <ul class="audit">{audit}</ul>
   </div>
   <p class="note">
-    Tamper-evident evidence assembled from tenant-scoped records at read time. This is a
-    demonstration artifact and is not a signed or legally non-repudiable record.
+    A traceable, tenant-scoped evidence receipt, assembled from live records at read time. It is
+    not tamper-evident: nothing here is hashed or signed, so it reflects the database as it stands
+    rather than proving what it held earlier. A signed snapshot would change that.
   </p>
 </div>
 </body>

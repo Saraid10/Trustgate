@@ -537,3 +537,45 @@ a single correlation through every step would tie together work that legitimatel
 separate requests, days apart, and would lose the ability to trace one request's handling. A test
 asserts a second purchase's identifiers never appear in the first purchase's trail.
 **Slice:** M4 evidence receipt hardening after external review
+
+## 2026-08-26: Untrusted Text Must Not Reach a Script Block Unescaped
+**Decision:** Serialise the checkout options through a translate table that escapes `<`, `>`, `&`,
+and the line and paragraph separators to unicode form, and serve the page under a per-request
+nonce Content-Security-Policy.
+**Alternatives considered:** Rely on `json.dumps`; strip the offending characters; move the options
+into a data attribute and parse them.
+**Rationale:** `json.dumps` emits `</script>` verbatim, so a catalog name carrying it closed the
+script element and let whatever followed execute. Catalog text is the untrusted content this
+project exists to contain, which makes the browser the last place to relax about it. Escaping to
+unicode form leaves the value byte-identical to JavaScript, so nothing is stripped or altered and
+the page still shows exactly what the server derived. The policy is defence in depth rather than
+the fix: text that somehow reached the document as markup still has no way to execute. Styles keep
+`unsafe-inline` because Razorpay Checkout injects its own, and tightening that would break the
+payment flow without closing the hole being defended.
+**Slice:** M3 hardening after external review
+
+## 2026-08-26: A Failed Provider Attempt Is Evidence, Not a Verdict
+**Decision:** Record `payment.failed` as a provider event and an audit entry without moving the
+payment. The aggregate payment becomes terminal only through expiry, cancellation, or a capture.
+**Alternatives considered:** Keep mapping `payment.failed` to a terminal `FAILED`; make `FAILED`
+non-terminal by allowing a transition back.
+**Rationale:** Razorpay documents `payment.failed` followed by `payment.captured`, and a UPI retry
+produces exactly that, sometimes under a different payment identifier. Treating the first failure
+as terminal did two wrong things at once: it released the reserved daily budget for a purchase that
+might still complete, and it left the payment in a state with no legal successor, so the real
+capture that followed was refused. Allowing a transition out of `FAILED` would weaken a terminal
+state that other paths rely on; leaving the payment where it is keeps the state machine's
+guarantees intact while preserving the attempt as evidence. `FAILED` remains reachable for an
+explicit operational outcome rather than a single provider attempt.
+**Slice:** M3 hardening after external review
+
+## 2026-08-26: The Receipt Claims Traceability, Not Tamper-Evidence
+**Decision:** Describe the evidence receipt as a traceable, tenant-scoped record and state plainly
+that it is not tamper-evident.
+**Alternatives considered:** Keep the tamper-evident wording; add a hash chain now.
+**Rationale:** The receipt is assembled from live rows at read time and is neither hashed nor
+signed, so it reflects the database as it stands rather than proving what it held earlier. Claiming
+tamper-evidence would assert a property the artifact does not have, which is precisely the kind of
+overstatement this project's evidence discipline exists to prevent. A signed or hash-chained
+snapshot would earn the stronger word and is recorded as the deferred upgrade.
+**Slice:** M4 evidence receipt

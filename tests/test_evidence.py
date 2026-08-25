@@ -321,7 +321,11 @@ async def test_a_denied_request_receipt_says_nothing_reached_the_provider(
 async def test_the_receipt_does_not_overclaim_what_it_is(
     client: AsyncClient, seeded_fixture_data: FixtureData
 ) -> None:
-    """Language discipline: tamper-evident, never non-repudiable."""
+    """Language discipline: claim traceability, not tamper-evidence.
+
+    The receipt is assembled from live rows and is neither hashed nor signed, so calling it
+    tamper-evident would claim a property it does not have.
+    """
 
     request_id = await _create_request(client, seeded_fixture_data)
 
@@ -332,8 +336,8 @@ async def test_the_receipt_does_not_overclaim_what_it_is(
         )
     ).text
 
-    assert "Tamper-evident" in body
-    assert "not a signed or legally non-repudiable record" in body
+    assert "traceable, tenant-scoped evidence receipt" in body
+    assert "not tamper-evident" in body
 
 
 async def test_another_tenant_cannot_read_the_receipt_either(

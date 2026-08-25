@@ -215,10 +215,13 @@ async def test_a_confirmed_row_must_carry_an_order_id(
     """The database refuses a confirmed order with nothing to confirm."""
 
     intent = await _pending_intent(async_session, seeded_fixture_data, receipt="tg_badstate")
-    intent.provider_state = "CONFIRMED"
 
+    # The failure is expected, so it is contained in a savepoint. Letting a constraint violation
+    # break the outer transaction leaves the session unusable and emits a SQLAlchemy warning.
     with pytest.raises(Exception) as caught:
-        await async_session.flush()
+        async with async_session.begin_nested():
+            intent.provider_state = "CONFIRMED"
+            await async_session.flush()
 
     assert "ck_razorpay_order_state_matches_identifier" in str(caught.value)
 

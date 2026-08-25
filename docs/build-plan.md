@@ -10,7 +10,7 @@ and [`docs/m2-verification.md`](m2-verification.md). The current and target arch
 
 | Gate | Result |
 |---|---|
-| Full suite | 183 passed |
+| Full suite | 197 passed |
 | `mypy --strict` | clean, 39 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean under `python -O` |
@@ -19,7 +19,7 @@ and [`docs/m2-verification.md`](m2-verification.md). The current and target arch
 | Tier A scenarios | A1, A2, A11b, A15 passing; matrix generated from the registry |
 | Razorpay Test Mode | order creation proven against the real provider; signed webhooks carry a payment to CAPTURED; checkout page renders without authorizing |
 | Evidence receipt | JSON endpoint and HTML receipt complete, from one shared assembly |
-| Slice verification notes | slices 1-6, hardening, M0, M1, M2 |
+| Slice verification notes | slices 1-6, hardening, M0, M1, M2, M3, M4 |
 
 **Defects found by running the system, not by adding to it:** request-scoped sessions never
 committed (the API returned success and persisted nothing); daily budget was reserved and never
@@ -368,7 +368,8 @@ evidence.
 
 ### Language discipline
 
-Call this **tamper-evident evidence**, never "non-repudiable proof." Non-repudiation is a legal and
+Call this a **traceable evidence receipt**, never "tamper-evident" or "non-repudiable proof."
+Tamper-evidence requires a hash chain or signature this does not have. Non-repudiation is a legal and
 PKI concept requiring identity binding and trusted key infrastructure. This is a demo-grade evidence
 record and the documentation must say so.
 
@@ -486,7 +487,7 @@ Name every deliberate cut and every simplification.
 - Testbed tenant identity via `X-Tenant-Id` is not production authentication
 - Single shared webhook secret is an intentional simplification
 - Fail-closed authority consumption requires manual recovery after an infrastructure failure
-- Evidence receipts are tamper-evident demo artifacts, not legally non-repudiable records
+- Evidence receipts are traceable, not tamper-evident: assembled from live rows, neither hashed nor signed
 - Tier B (Slice 8) is deferred, not completed
 - No Live Mode, no real customer data, no PCI DSS / RBI / NPCI / SOC 2 claims
 
@@ -509,7 +510,7 @@ Not cut, not started. Revisit only once the core demo is stable.
 |---|---|---|
 | **Slice 8 — Tier B "Branded Whisper"** | **Deferred pending time** | The canonical execution spec defines this as a formal slice. It is not complete and should not be described as such. If ultimately excluded, that requires a conscious scope update plus a limitations entry — not a silent drop. |
 | Signed mandates | Deferred stretch | Upgrading the snapshot hash to a signed object is a genuine improvement, but the core flow, receipt, and attack suite come first. |
-| Offline-verifiable evidence bundles | Deferred stretch | Depends on signed mandates. Keep the "tamper-evident, not non-repudiable" language when written. |
+| Signed or hash-chained evidence snapshot | Deferred stretch | The upgrade that would make the receipt genuinely tamper-evident, and the strongest remaining portfolio feature. |
 | Risk-signal seam | Deferred stretch | A pluggable risk-input interface where a score may tighten but never loosen authority. Design-only; no external connector. |
 | Order-command recovery states | Decide in M3 | Either implement, or document the fail-closed stance explicitly. Do not leave undecided. |
 | Multiple policy families | Out of scope | One ordered policy timeline per tenant, per the existing scope document. |

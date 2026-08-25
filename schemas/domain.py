@@ -381,10 +381,11 @@ class EvidenceAuditEntry(BaseModel):
 
 
 class PaymentRequestEvidence(BaseModel):
-    """A tamper-evident record of one purchase attempt.
+    """A traceable record of one purchase attempt.
 
-    This is a demo-grade evidence artifact, not a legally non-repudiable record: it is assembled
-    from tenant-scoped rows at read time and is not itself signed.
+    Assembled from tenant-scoped rows at read time and neither hashed nor signed, so it reflects
+    the current database rather than proving what it held earlier. Calling it tamper-evident would
+    claim a property it does not have; a signed snapshot or hash chain would provide one.
     """
 
     payment_request_id: UUID

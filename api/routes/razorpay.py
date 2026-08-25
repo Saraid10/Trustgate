@@ -439,11 +439,24 @@ async def verify_callback(
 
 
 _MAX_WEBHOOK_BODY_BYTES = 64 * 1024
-_RAZORPAY_EVENT_TARGETS = {
+# Events that move the aggregate payment.
+_RAZORPAY_TRANSITIONS = {
     "payment.authorized": "PROVIDER_PENDING",
     "payment.captured": "CAPTURED",
-    "payment.failed": "FAILED",
 }
+
+# Events recorded as provider attempts without moving the payment.
+#
+# One failed attempt is not a failed purchase. Razorpay documents `payment.failed` followed by
+# `payment.captured`, and a UPI retry produces exactly that, sometimes under a different payment
+# identifier. Treating the first failure as terminal released the reserved daily budget and left
+# the payment in a state with no legal successor, so the real capture that followed was refused.
+#
+# The attempt is therefore evidence, not a verdict. The payment stays where it is and becomes
+# terminal only through expiry, cancellation, or a capture.
+_RAZORPAY_RECORDED_ONLY = frozenset({"payment.failed"})
+
+_RAZORPAY_HANDLED_EVENTS = frozenset(_RAZORPAY_TRANSITIONS) | _RAZORPAY_RECORDED_ONLY
 
 
 def _webhook_secret() -> str:
@@ -511,6 +524,25 @@ async def receive_razorpay_webhook(
     re-serialising would verify a different message than the one that was signed.
     """
 
+    # Refuse on the declared length before reading, so an oversized body is not buffered first.
+    # This is a courtesy to the application, not a boundary: `Content-Length` is client-supplied
+    # and a chunked request omits it, so the measured check below still runs. A real deployment
+    # should also cap the body at the proxy.
+    declared = request.headers.get("Content-Length")
+    if declared and declared.isdigit() and int(declared) > _MAX_WEBHOOK_BODY_BYTES:
+        logger.warning(
+            json.dumps(
+                {
+                    "correlation_id": str(uuid4()),
+                    "reason": "RAZORPAY_WEBHOOK_BODY_TOO_LARGE",
+                    "declared_content_length": int(declared),
+                }
+            )
+        )
+        return JSONResponse(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            content={"detail": "RAZORPAY_WEBHOOK_BODY_TOO_LARGE"},
+        )
     raw_body = await request.body()
     if len(raw_body) > _MAX_WEBHOOK_BODY_BYTES:
         _log_unattributed_webhook_rejection(request, raw_body, "RAZORPAY_WEBHOOK_BODY_TOO_LARGE")
@@ -537,7 +569,7 @@ async def receive_razorpay_webhook(
         )
 
     entity = event.payment_entity
-    if entity is None or event.event not in _RAZORPAY_EVENT_TARGETS:
+    if entity is None or event.event not in _RAZORPAY_HANDLED_EVENTS:
         # A validly signed event this project does not act on. Acknowledge it so Razorpay stops
         # retrying, and change nothing.
         return JSONResponse(
@@ -594,15 +626,30 @@ async def receive_razorpay_webhook(
                 signature=signature,
             )
             session.add(provider_event)
-            if event.event == "payment.captured":
-                payment.captured_amount_minor = order.amount_minor
-            await transition(
-                session,
-                payment,
-                _RAZORPAY_EVENT_TARGETS[event.event],
-                reason=event.event,
-                correlation_id=correlation_id,
-            )
+            target_state = _RAZORPAY_TRANSITIONS.get(event.event)
+            if target_state is None:
+                session.add(
+                    AuditEvent(
+                        tenant_id=order.tenant_id,
+                        correlation_id=correlation_id,
+                        event_kind="razorpay_payment_attempt_failed",
+                        payload={
+                            "razorpay_order_id": order.razorpay_order_id,
+                            "razorpay_payment_id": entity.id,
+                            "payment_state": payment.state,
+                        },
+                    )
+                )
+            else:
+                if event.event == "payment.captured":
+                    payment.captured_amount_minor = order.amount_minor
+                await transition(
+                    session,
+                    payment,
+                    target_state,
+                    reason=event.event,
+                    correlation_id=correlation_id,
+                )
     except IntegrityError:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,

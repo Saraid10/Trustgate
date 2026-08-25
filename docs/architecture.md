@@ -1,7 +1,6 @@
 # Architecture
 
-**Current as of 2026-08-25.** 27 commits, 152 tests passing, `mypy --strict` clean across 37
-source files.
+**Current as of 2026-08-26.** 197 tests passing, `mypy --strict` clean across 39 source files.
 
 TrustGate is an authorization layer that sits between an AI buyer and payment execution. The agent
 may propose; an independent server-side authority decides; the decision is evidenced.
@@ -102,22 +101,27 @@ provider order was created, and that no payment gained authority. The harness ra
 `ScenarioViolation` rather than asserting, so it survives `python -O`, and it has self-tests that
 feed it a successful attack and require it to object.
 
-**M3 — Razorpay Test Mode.** Order creation from a consumed authority proven end to end against
-the real provider. Replay returns the same order rather than creating a second.
+**M3 — Razorpay Test Mode.** Order creation from a consumed authority, proven end to end against
+the real provider. Signed webhooks carry a payment through `AUTHORIZED` to `CAPTURED`, verified over
+raw bytes with the reported amount checked against the server-derived order. A failed provider
+attempt is recorded as evidence without moving the payment, because Razorpay documents
+`payment.failed` followed by `payment.captured`. A pending order intent is recorded before the
+provider call and reconciled on retry, under a row lock, because the provider offers no idempotency
+for order creation. The checkout page renders without authorizing.
 
-**M4 — Evidence receipt (JSON).** `GET /api/v1/payment-requests/{id}/evidence`, keyed on the
-request so denied attempts are evidenced too. Cross-tenant reads are byte-identical to unknown
-identifiers.
+**M4 — Evidence receipt.** `GET /api/v1/payment-requests/{id}/evidence` and a rendered receipt from
+one shared assembly, keyed on the request so denied attempts are evidenced too. Cross-tenant reads
+are byte-identical to unknown identifiers, and the trail follows the purchase across every
+correlation rather than stopping at the authorization.
 
 ### Remaining
 
 | Milestone | Scope |
 |---|---|
-| **M3 completion** | Razorpay webhook with raw-byte HMAC; Standard Checkout page |
-| **M4 completion** | HTML receipt rendering the same data |
 | **M5** | Tier A A3–A14, each emitting a receipt |
 | **M6** | Three-flow console and demo recording |
 | **M7** | Positioning, limitations, submission |
+| Stretch | A signed or hash-chained evidence snapshot, which would make the receipt genuinely tamper-evident |
 
 ---
 
@@ -171,6 +175,7 @@ Named here rather than discovered by a reviewer.
 - No rate limiting or body-size limit outside the webhook route's 64 KiB cap.
 - Authority consumption is fail-closed: an infrastructure failure after the claim requires manual
   recovery rather than risking a duplicate provider order.
-- Evidence receipts are tamper-evident demo artifacts, assembled at read time and not signed. They
-  are not legally non-repudiable records.
+- Evidence receipts are traceable but not tamper-evident. They are assembled from live rows at
+  read time and are neither hashed nor signed, so they reflect the database as it stands rather
+  than proving what it held earlier.
 - Refunds do not release daily budget, so a refund cannot reopen a spent day.
