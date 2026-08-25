@@ -443,3 +443,64 @@ def test_readme_attack_matrix_matches_the_registry() -> None:
 
     assert section is not None, "README is missing the attack-matrix markers"
     assert section == render_section(), "README attack matrix is stale; regenerate it"
+
+
+async def test_a5_an_approval_cannot_be_granted_by_the_requesting_actor(
+    api_client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Separation of duties must not rest on configuration hygiene alone.
+
+    Holding a separate approver token is what normally keeps the requester and the approver apart.
+    If the configured approver identity is ever the requesting actor, an approval recorded as
+    independent review would assert oversight that never happened, which is worse than no approval
+    because the evidence would claim a control that was not exercised.
+    """
+
+    monkeypatch.setenv("DEMO_APPROVER_TOKEN", "tier-a-approver-token")
+    monkeypatch.setenv("DEMO_APPROVER_ID", "tier-a-scenario-actor")
+
+    created = await api_client.post(
+        "/api/v1/catalog-payment-requests",
+        json=_purchase(sku="CLOUD-TEAM"),
+        headers=_headers(seeded_fixture_data),
+    )
+    assert created.json()["decision"] == "REQUIRE_APPROVAL"
+    request_id = created.json()["payment_request_id"]
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    response = await api_client.post(
+        f"/api/v1/approvals/{request_id}/grant",
+        headers={**_headers(seeded_fixture_data), "X-Approver-Token": "tier-a-approver-token"},
+    )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    assert response.status_code == 403
+    assert response.json()["detail"] == "APPROVER_IS_REQUESTER"
+    assert_attack_gained_no_authority(before, after)
+
+
+async def test_a5_a_separate_approver_can_still_grant(
+    api_client: AsyncClient, seeded_fixture_data: FixtureData, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard must refuse self-approval without blocking genuine review."""
+
+    monkeypatch.setenv("DEMO_APPROVER_TOKEN", "tier-a-approver-token")
+    monkeypatch.setenv("DEMO_APPROVER_ID", "an-independent-approver")
+
+    created = await api_client.post(
+        "/api/v1/catalog-payment-requests",
+        json=_purchase(sku="CLOUD-TEAM"),
+        headers=_headers(seeded_fixture_data),
+    )
+    request_id = created.json()["payment_request_id"]
+
+    response = await api_client.post(
+        f"/api/v1/approvals/{request_id}/grant",
+        headers={**_headers(seeded_fixture_data), "X-Approver-Token": "tier-a-approver-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["payment_request_id"] == request_id

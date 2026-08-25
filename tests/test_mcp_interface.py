@@ -221,3 +221,22 @@ async def test_mcp_hides_cross_tenant_payment_and_audits_the_attempt(
     assert result == {"found": False, "reason": "CROSS_TENANT_ACCESS_DENIED"}
     assert after == before + 1
     assert_attack_created_nothing(state_before, state_after)
+
+
+@pytest.mark.asyncio
+async def test_malformed_identifiers_are_refused_like_unknown_ones(mcp_call: McpCall) -> None:
+    """Tool arguments are untrusted input.
+
+    A parse error would distinguish a malformed identifier from one belonging to another tenant,
+    and would surface a stack trace to the agent rather than a refusal.
+    """
+
+    for tool, argument in (
+        ("evaluate_payment_policy", {"payment_request_id": "not-a-uuid"}),
+        ("request_user_approval", {"payment_request_id": "../../etc/passwd"}),
+        ("get_payment_status", {"payment_id": ""}),
+    ):
+        result = await mcp_call(tool, argument)
+        assert result.get("found") is False or result.get("ok") is False, (
+            f"{tool} did not refuse a malformed identifier: {result}"
+        )

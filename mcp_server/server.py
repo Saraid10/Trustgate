@@ -40,6 +40,20 @@ def _configured_actor_id() -> str:
     return actor_id
 
 
+def _parse_identifier(value: str) -> UUID | None:
+    """Parse an agent-supplied identifier without trusting its shape.
+
+    Tool arguments are untrusted input. An unparseable value should be refused the same way an
+    unknown one is, rather than surfacing a parse error that distinguishes "malformed" from
+    "belongs to someone else".
+    """
+
+    try:
+        return UUID(value)
+    except (ValueError, AttributeError):
+        return None
+
+
 def _result_data(result: PaymentRequestDecision | JSONResponse) -> dict[str, Any]:
     if isinstance(result, JSONResponse):
         return cast(dict[str, Any], json.loads(bytes(result.body)))
@@ -138,11 +152,14 @@ def create_mcp_server(session_factory: SessionFactory = SessionLocal) -> FastMCP
         async with session_factory() as session:
             async with session.begin():
                 tenant = await _configured_tenant(session)
+                identifier = _parse_identifier(payment_request_id)
+                if identifier is None:
+                    return {"found": False, "reason": "CROSS_TENANT_ACCESS_DENIED"}
                 decision = await session.scalar(
                     select(AuthorizationDecision)
                     .where(
                         AuthorizationDecision.tenant_id == tenant.id,
-                        AuthorizationDecision.payment_request_id == UUID(payment_request_id),
+                        AuthorizationDecision.payment_request_id == identifier,
                     )
                     .order_by(AuthorizationDecision.created_at.desc())
                     .limit(1)
@@ -163,11 +180,16 @@ def create_mcp_server(session_factory: SessionFactory = SessionLocal) -> FastMCP
         async with session_factory() as session:
             async with session.begin():
                 tenant = await _configured_tenant(session)
-                payment = await session.scalar(
-                    select(Payment).where(
-                        Payment.tenant_id == tenant.id,
-                        Payment.payment_request_id == UUID(payment_request_id),
+                identifier = _parse_identifier(payment_request_id)
+                payment = (
+                    await session.scalar(
+                        select(Payment).where(
+                            Payment.tenant_id == tenant.id,
+                            Payment.payment_request_id == identifier,
+                        )
                     )
+                    if identifier is not None
+                    else None
                 )
                 if payment is None or payment.state != "APPROVAL_REQUIRED":
                     reason = "APPROVAL_NOT_REQUIRED"
@@ -205,10 +227,15 @@ def create_mcp_server(session_factory: SessionFactory = SessionLocal) -> FastMCP
         async with session_factory() as session:
             async with session.begin():
                 tenant = await _configured_tenant(session)
-                payment = await session.scalar(
-                    select(Payment).where(
-                        Payment.id == UUID(payment_id), Payment.tenant_id == tenant.id
+                identifier = _parse_identifier(payment_id)
+                payment = (
+                    await session.scalar(
+                        select(Payment).where(
+                            Payment.id == identifier, Payment.tenant_id == tenant.id
+                        )
                     )
+                    if identifier is not None
+                    else None
                 )
                 if payment is None:
                     session.add(

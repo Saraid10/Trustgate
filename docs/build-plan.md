@@ -10,13 +10,13 @@ and [`docs/m2-verification.md`](m2-verification.md). The current and target arch
 
 | Gate | Result |
 |---|---|
-| Full suite | 198 passed |
+| Full suite | 201 passed |
 | `mypy --strict` | clean, 39 source files |
 | `ruff check .` | clean |
 | Optimized-mode safety smoke test | clean under `python -O` |
 | Migration `base` -> `head` round trip | clean, all eleven revisions reversible |
 | Concurrency invariants raced | 4 PostgreSQL multi-session races passed |
-| Tier A scenarios | A1, A2, A11b, A15 passing; matrix generated from the registry |
+| Tier A scenarios | A1, A2, A5, A11b, A15 passing; matrix generated from the registry |
 | Razorpay Test Mode | order creation proven against the real provider; signed webhooks carry a payment to CAPTURED; checkout page renders without authorizing |
 | Evidence receipt | JSON endpoint and HTML receipt complete, from one shared assembly |
 | Slice verification notes | slices 1-6, hardening, M0, M1, M2, M3, M4 |

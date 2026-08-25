@@ -594,3 +594,28 @@ remain nullable only for rejections occurring before a trusted local object exis
 backfills historic records through tenant-scoped joins and limits the receipt fallback to the one
 legacy review-required event that used it.
 **Slice:** M4 evidence receipt hardening after external review
+
+## 2026-08-26: Self-Approval Is Refused Structurally
+**Decision:** Refuse an approval whose configured approver identity equals the requesting actor,
+with reason `APPROVER_IS_REQUESTER`.
+**Alternatives considered:** Continue relying on the agent not holding the approver token; check
+only that the tokens differ.
+**Rationale:** Separation of duties was real but incidental: the agent cannot approve because it
+does not hold `DEMO_APPROVER_TOKEN`, not because anything refused a self-approval. A misconfigured
+`DEMO_APPROVER_ID` matching the requesting actor would therefore record an approval as independent
+review, and the evidence receipt would assert oversight that never happened. That is worse than no
+approval, because the artifact would claim a control was exercised when it was not. The project's
+scope document already listed self-approval among the blocked scenarios, so the guard makes the
+claim true rather than aspirational. A second test proves the guard does not block a genuine
+separate approver.
+**Slice:** Security review, A5 registered in the Tier A matrix
+
+## 2026-08-26: Untrusted Identifiers Are Refused, Not Parsed Optimistically
+**Decision:** MCP tools parse agent-supplied identifiers through a helper that returns `None` on a
+malformed value, and refuse it exactly as they refuse an unknown one.
+**Alternatives considered:** Let `UUID()` raise; return a distinct malformed-input error.
+**Rationale:** Tool arguments are untrusted input. Raising surfaced a parse error to the caller
+instead of a refusal, and a distinct error would have told an agent whether a value was
+badly formed or simply belonged to another tenant, which is the disclosure the tenant-scoped
+lookups exist to avoid.
+**Slice:** Security review

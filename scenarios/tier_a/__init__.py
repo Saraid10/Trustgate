@@ -45,6 +45,18 @@ REGISTRY: tuple[Scenario, ...] = (
         ),
     ),
     Scenario(
+        id="A5",
+        title="Self-approval",
+        invariant=(
+            "An approval cannot be granted by the identity that requested the purchase. "
+            "Separation of duties is enforced, not merely expected from configuration."
+        ),
+        test_names=(
+            "test_a5_an_approval_cannot_be_granted_by_the_requesting_actor",
+            "test_a5_a_separate_approver_can_still_grant",
+        ),
+    ),
+    Scenario(
         id="A11b",
         title="Cross-tenant object access",
         invariant=(

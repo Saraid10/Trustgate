@@ -50,6 +50,15 @@ async def grant_approval(
         )
         if payment_request is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="APPROVAL_NOT_FOUND")
+        if approver_id == payment_request.actor_id:
+            # Holding a separate approver token is what normally keeps these identities apart, so
+            # this refusal only fires on a misconfiguration. That is exactly when it matters: an
+            # approval recorded as independent review, granted by the identity that requested the
+            # purchase, is worse than no approval because the evidence would assert oversight that
+            # never happened.
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="APPROVER_IS_REQUESTER"
+            )
         payment = await session.scalar(
             select(Payment)
             .where(Payment.payment_request_id == payment_request.id, Payment.tenant_id == tenant.id)
