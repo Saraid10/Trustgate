@@ -783,3 +783,44 @@ the refused row: whether anything reached the provider, derived from whether a p
 exists rather than from the decision, because a rejection that still created an order would not be
 a rejection.
 **Slice:** D - M6 console
+
+## 2026-08-26: The Demo Opens With Our Own Code Failing
+**Decision:** `python -m demo.unguarded` runs the same agent over the same poisoned catalog against
+an adapter with no policy layer, and the injected instruction executes. It is committed as a
+first-class demonstration with its own tests.
+**Alternatives considered:** Open with the three passing flows; describe the risk in narration;
+compare against an external product or MCP surface.
+**Rationale:** Three clean refusals prove the system works and are weak at showing why anyone needs
+it - a viewer can watch three green results and never feel the risk. Naming the risk in narration
+asks for trust; running it does not.
+
+Comparing against another product was rejected on its merits, not only because it is
+sponsor-sensitive. It would depend on a surface outside this repository that changes without
+notice, and it would frame someone else's product as inadequate rather than making this project's
+case. The unguarded baseline demonstrates the same general problem using only code we control, and
+the argument is stronger for being self-inflicted.
+
+The comparison is deliberately narrow. TrustGate does not inspect the proposal and cleverly
+identify it as hostile. `PurchaseProposal` has no field an amount or a merchant could be written
+into, so those values are discarded before anything is decided. The unguarded adapter differs in
+exactly one respect: it believes them. Both paths are given one identical model response so neither
+can be accused of having been fed different inputs.
+**Slice:** D - M6 unguarded baseline
+
+## 2026-08-26: Deliberately Vulnerable Code Must Be Provably Inert, and Provably Vulnerable
+**Decision:** The baseline imports no network client, no provider adapter, and no database session,
+and charges an in-process ledger that lives for one function call. A test parses the package's
+imports and fails if any of those appear. A second test asserts the baseline is still exploitable.
+**Alternatives considered:** Point it at the existing mock provider; guard it behind an environment
+flag; keep it uncommitted and reproduce it live during the demo.
+**Rationale:** Vulnerable code in a payments repository has to be inert in a way a reader can
+check. A docstring promising it cannot charge anyone is worth nothing; an import test that fails
+the moment someone adds `httpx` is worth something. The mock provider was rejected for the reason
+it looked attractive: anything with a base URL can be pointed somewhere else, and this has no
+address at all.
+
+The second test is the one that is easy to leave out. If someone hardens the adapter, every other
+test still passes and the demo silently begins showing two identical refusals - while the pitch
+goes on claiming a contrast the screen no longer shows. That is worse than deleting the
+demonstration outright, because it fails without telling anyone.
+**Slice:** D - M6 unguarded baseline

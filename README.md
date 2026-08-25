@@ -29,6 +29,26 @@ proposals rather than self-reported. The regression suite never calls a model pr
 deterministic substitutes, so safety verification does not depend on a model behaving a particular
 way on a particular day.
 
+## Seeing the Problem
+
+Three clean refusals prove the system works and are weak at showing why anyone needs it. The demo
+therefore opens with this project's own code failing, using no network, no credentials, and no
+database:
+
+```bash
+python -m demo.unguarded
+```
+
+The same agent reads the same poisoned catalog, and one model response is handed to two adapters.
+The unguarded one accepts an amount and a merchant, so the injected instruction executes and it
+pays INR 20,000.00 to a merchant the catalog text named. The other discards those fields, because
+`PurchaseProposal` has nowhere to put them.
+
+The difference is not a filter that recognised an attack. It is that one interface had a field for
+the money and the other did not. The baseline has its own tests asserting both that it cannot reach
+anything real and that it is still exploitable, since a demonstration that quietly stopped being
+vulnerable would keep passing while making the opposite point.
+
 ## Attack Matrix
 
 Tier A adversarial scenarios. This table is generated from the scenario registry by
