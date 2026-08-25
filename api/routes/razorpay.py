@@ -102,6 +102,16 @@ async def _create_razorpay_order(
 
 
 def _order_response(order: RazorpayOrder, key_id: str) -> RazorpayOrderResponse:
+    """Render a confirmed provider order.
+
+    An unconfirmed intent has no provider identifier to return. Raising rather than asserting keeps
+    the guard alive under `python -O`, where assertions are stripped.
+    """
+
+    if order.razorpay_order_id is None or order.provider_state != "CONFIRMED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="RAZORPAY_ORDER_NOT_CONFIRMED"
+        )
     return RazorpayOrderResponse(
         checkout_authority_id=order.checkout_authority_id,
         razorpay_key_id=key_id,
@@ -109,6 +119,98 @@ def _order_response(order: RazorpayOrder, key_id: str) -> RazorpayOrderResponse:
         amount_minor=order.amount_minor,
         currency=order.currency,
     )
+
+
+async def _find_orders_by_receipt(*, key_id: str, key_secret: str, receipt: str) -> list[str]:
+    """Ask the provider which orders already carry this receipt.
+
+    Razorpay provides no idempotency for order creation. Verified against Test Mode on 2026-08-25:
+    two creates with the same receipt produced two distinct orders, and an idempotency-key header
+    did not deduplicate. The `receipt` query filter also returned nothing, so orders are listed and
+    matched here rather than filtered by the provider.
+
+    A retry that skipped this lookup would create a second order for a purchase that already has
+    one, which is the duplicate charge the whole authority mechanism exists to prevent.
+    """
+
+    list_url = os.getenv("RAZORPAY_ORDERS_URL", _ORDERS_URL)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(list_url, auth=(key_id, key_secret), params={"count": 100})
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_NETWORK_ERROR"
+        ) from exc
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
+        )
+    try:
+        items = response.json().get("items", [])
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
+        ) from exc
+    if not isinstance(items, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="RAZORPAY_RECONCILE_FAILED"
+        )
+    return [
+        item["id"]
+        for item in items
+        if isinstance(item, dict)
+        and item.get("receipt") == receipt
+        and isinstance(item.get("id"), str)
+    ]
+
+
+async def _reconcile_intent(
+    session: AsyncSession,
+    *,
+    intent: RazorpayOrder,
+    key_id: str,
+    key_secret: str,
+    correlation_id: UUID,
+) -> RazorpayOrder | None:
+    """Resolve an intent whose provider call never completed.
+
+    Returns the confirmed row when exactly one provider order matches the receipt. Returns None
+    when none exists, meaning creation may safely proceed. Marks the intent for human review when
+    several match, because choosing between duplicate orders is not a decision this system should
+    make silently.
+    """
+
+    matches = await _find_orders_by_receipt(
+        key_id=key_id, key_secret=key_secret, receipt=intent.receipt
+    )
+    if len(matches) == 1:
+        intent.razorpay_order_id = matches[0]
+        intent.provider_state = "CONFIRMED"
+        intent.reconciled_at = datetime.now(UTC)
+        session.add(
+            AuditEvent(
+                tenant_id=intent.tenant_id,
+                correlation_id=correlation_id,
+                event_kind="razorpay_order_reconciled",
+                payload={"receipt": intent.receipt, "razorpay_order_id": matches[0]},
+            )
+        )
+        return intent
+    if len(matches) > 1:
+        intent.provider_state = "NEEDS_REVIEW"
+        intent.reconciled_at = datetime.now(UTC)
+        session.add(
+            AuditEvent(
+                tenant_id=intent.tenant_id,
+                correlation_id=correlation_id,
+                event_kind="razorpay_order_needs_review",
+                payload={"receipt": intent.receipt, "razorpay_order_ids": matches},
+            )
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="RAZORPAY_DUPLICATE_ORDERS_FOR_RECEIPT"
+        )
+    return None
 
 
 @router.post(
@@ -123,6 +225,7 @@ async def create_order(
     """Claim one authority, then create a provider order from its stored catalog snapshot."""
 
     key_id, key_secret = _credentials()
+    correlation_id = uuid4()
     existing = await session.scalar(
         select(RazorpayOrder).where(
             RazorpayOrder.tenant_id == tenant.id,
@@ -130,8 +233,47 @@ async def create_order(
         )
     )
     if existing is not None:
+        if existing.provider_state == "CONFIRMED":
+            return _order_response(existing, key_id)
+        if existing.provider_state == "NEEDS_REVIEW":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="RAZORPAY_DUPLICATE_ORDERS_FOR_RECEIPT",
+            )
+        # A PENDING row means a previous attempt consumed the authority and never recorded an
+        # order. Ask the provider what actually happened before creating anything.
+        reconciled = await _reconcile_intent(
+            session,
+            intent=existing,
+            key_id=key_id,
+            key_secret=key_secret,
+            correlation_id=correlation_id,
+        )
+        if reconciled is not None:
+            return _order_response(reconciled, key_id)
+        razorpay_order_id = await _create_razorpay_order(
+            key_id=key_id,
+            key_secret=key_secret,
+            amount_minor=existing.amount_minor,
+            currency=existing.currency,
+            receipt=existing.receipt,
+            notes={"payment_id": str(existing.payment_id)},
+        )
+        existing.razorpay_order_id = razorpay_order_id
+        existing.provider_state = "CONFIRMED"
+        session.add(
+            AuditEvent(
+                tenant_id=tenant.id,
+                correlation_id=correlation_id,
+                event_kind="razorpay_order_created",
+                payload={
+                    "checkout_authority_id": str(existing.checkout_authority_id),
+                    "razorpay_order_id": razorpay_order_id,
+                    "recovered_intent": True,
+                },
+            )
+        )
         return _order_response(existing, key_id)
-    correlation_id = uuid4()
     try:
         authority = await consume_checkout_authority(
             session,
@@ -152,6 +294,28 @@ async def create_order(
             status_code=status.HTTP_409_CONFLICT, detail="CHECKOUT_AUTHORITY_UNAVAILABLE"
         )
     receipt = f"tg_{authority.id.hex}"
+    # The intent is recorded and flushed before the provider is contacted, so a failure or crash
+    # during the call leaves a row to reconcile rather than a consumed authority with no trace.
+    intent = RazorpayOrder(
+        tenant_id=tenant.id,
+        checkout_authority_id=authority.id,
+        payment_id=authority.payment_id,
+        razorpay_order_id=None,
+        provider_state="PENDING",
+        receipt=receipt,
+        amount_minor=request.amount_minor,
+        currency=request.currency,
+    )
+    session.add(intent)
+    session.add(
+        AuditEvent(
+            tenant_id=tenant.id,
+            correlation_id=correlation_id,
+            event_kind="razorpay_order_intent_recorded",
+            payload={"checkout_authority_id": str(authority.id), "receipt": receipt},
+        )
+    )
+    await session.commit()
     try:
         razorpay_order_id = await _create_razorpay_order(
             key_id=key_id,
@@ -175,16 +339,9 @@ async def create_order(
         )
         await session.commit()
         raise
-    order = RazorpayOrder(
-        tenant_id=tenant.id,
-        checkout_authority_id=authority.id,
-        payment_id=authority.payment_id,
-        razorpay_order_id=razorpay_order_id,
-        receipt=receipt,
-        amount_minor=request.amount_minor,
-        currency=request.currency,
-    )
-    session.add(order)
+    intent.razorpay_order_id = razorpay_order_id
+    intent.provider_state = "CONFIRMED"
+    order = intent
     session.add(
         AuditEvent(
             tenant_id=tenant.id,

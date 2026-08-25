@@ -418,3 +418,28 @@ for events that are not problems.
 authorizes first. The state machine refuses that shortcut, so a validly signed capture cannot jump
 a payment straight to captured, and a test pins it.
 **Slice:** M3 Razorpay Test Mode flow
+
+## 2026-08-25: Provider Order Recovery Rather Than a Documented Fail-Closed Stance
+**Decision:** Record a `PENDING` provider-order intent, committed, before contacting Razorpay. On a
+retry of an unresolved intent, ask the provider which orders already carry the deterministic
+receipt: adopt the order when exactly one matches, create when none does, and mark the intent
+`NEEDS_REVIEW` when several do. Enforce the state/identifier pairing with a database check
+constraint.
+**Alternatives considered:** Document the fail-closed stance in limitations and build nothing; rely
+on the receipt as an idempotency key; send an idempotency header; retry blindly.
+**Rationale:** Consuming an authority commits before the provider call, so a failure between the
+two left the authority burned with no order and no record that one had been attempted. The
+purchase could then neither proceed nor be retried.
+
+The provider offers no protection here, which was verified rather than assumed. Against Test Mode
+on 2026-08-25, two creates carrying the same receipt produced two distinct orders
+(`order_TU24YwIe2cBZsJ` and `order_TU24ZFQmKkIepi`), and an `X-Razorpay-Idempotency-Key` header
+also produced two. Filtering the orders list by `receipt` returned nothing, so matching is done
+client-side over the listed orders. A blind retry would therefore have created a duplicate order,
+which is the outcome the authority mechanism exists to prevent.
+
+Recovery is consequently driven by state this system owns, with the provider consulted only to
+discover what already exists. Duplicate matches are escalated rather than resolved silently,
+because choosing between two real orders is not a decision to make without a human, and that state
+is reachable in practice given the provider permits duplicate receipts.
+**Slice:** M3 Razorpay Test Mode flow

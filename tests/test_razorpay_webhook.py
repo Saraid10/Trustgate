@@ -101,6 +101,7 @@ async def order(async_session: AsyncSession, seeded_fixture_data: FixtureData) -
         checkout_authority_id=authority.id,
         payment_id=payment.id,
         razorpay_order_id=f"order_{uuid4().hex[:14]}",
+        provider_state="CONFIRMED",
         receipt=f"tg_{authority.id.hex}",
         amount_minor=ORDER_AMOUNT,
         currency="INR",

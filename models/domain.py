@@ -414,6 +414,16 @@ class RazorpayOrder(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint("amount_minor >= 0", name="ck_razorpay_order_amount_nonnegative"),
+        CheckConstraint(
+            "provider_state IN ('PENDING', 'CONFIRMED', 'NEEDS_REVIEW')",
+            name="ck_razorpay_order_provider_state",
+        ),
+        CheckConstraint(
+            "(provider_state = 'PENDING' AND razorpay_order_id IS NULL) "
+            "OR (provider_state = 'CONFIRMED' AND razorpay_order_id IS NOT NULL) "
+            "OR provider_state = 'NEEDS_REVIEW'",
+            name="ck_razorpay_order_state_matches_identifier",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -422,7 +432,11 @@ class RazorpayOrder(Base):
     )
     checkout_authority_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     payment_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
-    razorpay_order_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Absent until the provider confirms creation. An intent row is written first so a failure
+    # between consuming the authority and creating the order leaves a record to reconcile.
+    razorpay_order_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_state: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     receipt: Mapped[str] = mapped_column(String(40), nullable=False)
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
