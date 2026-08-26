@@ -273,6 +273,9 @@ async def test_the_page_prefills_synthetic_contact_details(
     Test Mode delivers nothing to either value, so there is no reason for them to be real, and one
     good reason for them not to be: the demonstration is filmed and published. The project's rule
     against putting real customer data through this flow covers the person running it.
+
+    The number is not a repeated digit, because the checkout form rejects those - the first choice
+    here was 9999999999 and it was refused on screen.
     """
 
     order = await _confirmed_order(async_session, seeded_fixture_data)
@@ -280,6 +283,6 @@ async def test_the_page_prefills_synthetic_contact_details(
     response = await client.get(f"/api/v1/razorpay/checkout/{order.razorpay_order_id}")
 
     assert response.status_code == 200
-    assert "9999999999" in response.text
+    assert "9876543210" in response.text
     assert "demo@example.invalid" in response.text
     assert "prefill" in response.text

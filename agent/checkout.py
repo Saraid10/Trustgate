@@ -175,7 +175,12 @@ async def _main(base_url: str, tenant_id: UUID, request_id: UUID | None, open_pa
     print(f"\n  Provider order   {result['razorpay_order_id']}")
     print(f"  Authority spent  {result['checkout_authority_id']}")
     print(f"\n  Pay here:        {result['checkout_url']}")
-    print("\n  Razorpay Test Mode card: 4111 1111 1111 1111, any future expiry, any CVV.\n")
+    # Netbanking rather than a card. Test Mode accounts have international
+    # payments off by default, and the widely quoted 4111 test card is refused
+    # as international - on this account it was. The netbanking simulator needs
+    # no card details and cannot be refused that way.
+    print("\n  Pay with Netbanking: pick any bank, then click Success on the simulated page.")
+    print("  Or UPI: success@razorpay\n")
 
     if open_page:
         webbrowser.open(str(result["checkout_url"]))

@@ -113,8 +113,11 @@ python -m agent.checkout --open
 ```
 
 That issues a one-time checkout authority, creates a real Razorpay Test Mode order from the
-snapshot it is bound to, and opens the payment page. Pay with `4111 1111 1111 1111`, any future
-expiry, any CVV.
+snapshot it is bound to, and opens the payment page.
+
+Pay with **Netbanking** - pick any bank, then click Success on the simulated page. Test Mode
+accounts have international payments off by default, so the widely quoted `4111` test card is
+refused as international. UPI `success@razorpay` also works.
 
 > That authority is bound to a hash of this exact purchase, expires in fifteen minutes, and is
 > consumed by the order that just used it. It cannot be spent twice.

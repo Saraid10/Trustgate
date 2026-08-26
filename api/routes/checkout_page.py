@@ -68,8 +68,9 @@ _SCRIPT_ESCAPES = {
 }
 
 
-# Obviously fake, and valid enough for the checkout form to accept without argument.
-SYNTHETIC_CONTACT = "9999999999"
+# Obviously fake, and valid enough for the checkout form to accept. A repeated-digit number is
+# rejected by the form's own validation, which is how the first choice here failed.
+SYNTHETIC_CONTACT = "9876543210"
 SYNTHETIC_EMAIL = "demo@example.invalid"
 
 
