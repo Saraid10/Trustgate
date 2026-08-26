@@ -897,3 +897,36 @@ the constraint that started this. So the rule is now stated where it belongs - i
 written once, mutable ones are kept current - rather than applied uniformly because one row
 happened to need it.
 **Slice:** D - M6, found in review
+
+## 2026-08-26: The Approval Is Granted by a Separate Command Holding a Separate Token
+**Decision:** `python -m agent.approve` completes the demo's approval flow over the same HTTP route
+an operator would use, carrying `X-Approver-Token`, under an identity read from `DEMO_APPROVER_ID`.
+It finds the pending purchase itself rather than taking a copied identifier.
+**Alternatives considered:** Have the buyer agent approve its own request once it sees
+`APPROVAL_REQUIRED`; add an approve button to the console; leave the flow undemonstrated and
+describe it in narration.
+**Rationale:** The middle flow could be described and not shown - the agent reaches
+`APPROVAL_REQUIRED` and stops, and nothing carried it further. Letting the agent approve itself
+would have made the demo shorter and the separation of duties fictional, and the server would
+refuse it anyway: an approval whose approver matches the requester is rejected as
+`APPROVER_IS_REQUESTER`. A console button was rejected for the same reason the console has no
+buttons at all.
+
+Finding the pending purchase by state rather than by a pasted identifier removes one thing to
+fumble on camera and keeps the two commands independent. Refusals are reported as sentences with
+the server's reason code, because a stack trace mid-take is a worse failure than the one it
+describes.
+**Slice:** D - M6 approval flow
+
+## 2026-08-26: A Count That Is Not Tenant-Scoped Asserts the Wrong Thing
+**Decision:** `test_mcp_requests_approval_for_an_approval_required_payment` counts approvals for
+its own tenant rather than for the whole database.
+**Alternatives considered:** Delete the demo tenant's committed rows so the global count matched
+again; assert a before-and-after delta.
+**Rationale:** The test broke the first time real demo data was committed, which is the tell: it
+was asserting something about every tenant while claiming to test one. Making the database tidy
+enough for the old assertion to pass would have preserved the flaw and hidden it again - and the
+same assertion would have passed happily while this tenant gained an approval and another lost one.
+
+Found by running the demo, not by reading the test.
+**Slice:** D - M6, found in review

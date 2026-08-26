@@ -165,9 +165,17 @@ async def test_mcp_requests_approval_for_an_approval_required_payment(
         "request_user_approval",
         {"payment_request_id": created["payment_request_id"]},
     )
-    approvals = await async_session.scalar(select(func.count()).select_from(Approval))
+    # Scoped to this tenant. An unscoped count asserts something about the whole database, so it
+    # broke the moment another tenant's row was committed - and it would equally have passed while
+    # this tenant gained an approval and some other lost one.
+    approvals = await async_session.scalar(
+        select(func.count())
+        .select_from(Approval)
+        .where(Approval.tenant_id == seeded_fixture_data.tenant_a.id)
+    )
     assert created["decision"] == "REQUIRE_APPROVAL"
     assert approval == {"ok": True, "status": "PENDING_HUMAN_APPROVAL"}
+    # The two the fixture seeded. Requesting approval records the request; it does not grant one.
     assert approvals == 2
 
 

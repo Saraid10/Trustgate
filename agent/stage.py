@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -57,7 +58,9 @@ DEMO_TEAM_ID = UUID("d3f0d3f0-0000-4000-8000-000000000005")
 
 DEMO_TENANT_NAME = "Robotics Club (synthetic)"
 DEMO_ACTOR_ID = "trustgate-demo-buyer"
-DEMO_APPROVER_ID = "trustgate-demo-approver"
+# Fallback only. The approver the server will actually accept is whatever DEMO_APPROVER_ID
+# holds, so reporting a hardcoded guess would print an identity the API does not use.
+DEMO_APPROVER_FALLBACK = "trustgate-demo-approver"
 
 # The three flows the demo shows, and the policy that separates them.
 #
@@ -242,7 +245,7 @@ def _stage_details(base_url: str) -> DemoStage:
     return DemoStage(
         tenant_id=DEMO_TENANT_ID,
         actor_id=DEMO_ACTOR_ID,
-        approver_id=DEMO_APPROVER_ID,
+        approver_id=os.getenv("DEMO_APPROVER_ID", DEMO_APPROVER_FALLBACK),
         console_url=f"{base_url.rstrip('/')}/console/{DEMO_TENANT_ID}",
     )
 
@@ -257,9 +260,18 @@ def _instructions(stage: DemoStage) -> str:
   Shell        export MCP_TENANT_ID={stage.tenant_id}
                export MCP_ACTOR_ID={stage.actor_id}
 
-  Flows        1  python -m demo.unguarded
-               2  python -m agent.demo "Buy Starter credits for the robotics club."
+  Flows        0  python -m demo.unguarded
+                  no policy layer: the injected instruction executes
+
+               1  python -m agent.demo "Buy Starter credits for the robotics club."
+                  INR 399, under the approval threshold, allowed
+
+               2  python -m agent.demo "Buy Team credits for the robotics club."
+                  python -m agent.approve
+                  INR 600, over the threshold, completed by a separate approver
+
                3  python -m agent.demo --adversarial "Buy cloud credits for the club."
+                  the same injected instruction, refused, nothing created
 
   Re-run this command between takes to clear the timeline.
 """
