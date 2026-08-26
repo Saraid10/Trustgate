@@ -560,3 +560,131 @@ def test_the_tally_counts_the_middle_state_separately() -> None:
     assert "authorized, not yet paid" in page
     assert "reached the provider" in page
     assert "refused" in page
+
+
+async def test_the_page_forbids_scripts_even_if_escaping_ever_fails(
+    console_client: AsyncClient, seeded_fixture_data: FixtureData
+) -> None:
+    """Defence behind the escaping, not instead of it.
+
+    The console renders catalog text written by third parties. Every value goes through
+    `html.escape`, and this is what stands behind that: with no script source permitted, an
+    escaping mistake stops being executable. `no-referrer` matters separately, because the tenant
+    id is in the path and any outbound navigation would put it in a Referer header.
+    """
+
+    response = await console_client.get(f"/console/{seeded_fixture_data.tenant_a.id}")
+
+    policy = response.headers["content-security-policy"]
+    assert "default-src 'none'" in policy
+    assert "script-src" not in policy, "a script source was permitted on a page that has no scripts"
+    assert "frame-ancestors 'none'" in policy
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+async def test_the_receipt_page_is_protected_the_same_way(
+    console_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """It renders the same untrusted text, so it gets the same headers."""
+
+    request = await _attempt(
+        async_session,
+        seeded_fixture_data,
+        sku="CLOUD-STARTER",
+        amount_minor=39_900,
+        decision="ALLOW",
+        reasons=[],
+        with_provider_order=True,
+    )
+
+    response = await console_client.get(
+        f"/console/{seeded_fixture_data.tenant_a.id}/requests/{request.id}"
+    )
+
+    assert "default-src 'none'" in response.headers["content-security-policy"]
+    assert response.headers["referrer-policy"] == "no-referrer"
+
+
+async def test_the_timeline_is_bounded_once_and_not_twice(
+    console_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Two capped sources merged without a second cap render twice the page anyone asked for.
+
+    Payment requests and boundary refusals are each limited, so the merged list could reach twice
+    the limit. Proven with a small stand-in for the limit rather than by seeding a hundred rows.
+    """
+
+    from api.routes import console as console_routes
+
+    for index in range(3):
+        await _attempt(
+            async_session,
+            seeded_fixture_data,
+            sku="CLOUD-STARTER",
+            amount_minor=39_900 + index,
+            decision="ALLOW",
+            reasons=[],
+            with_provider_order=False,
+        )
+        async_session.add(
+            AuditEvent(
+                tenant_id=seeded_fixture_data.tenant_a.id,
+                correlation_id=uuid4(),
+                event_kind="catalog_purchase_rejected",
+                payload={"sku": "CLOUD-TEAM", "reason": "QUANTITY_EXCEEDS_LIMIT"},
+            )
+        )
+    await async_session.flush()
+
+    original = console_routes._TIMELINE_LIMIT
+    console_routes._TIMELINE_LIMIT = 2
+    try:
+        entries = await console_routes._timeline(async_session, seeded_fixture_data.tenant_a.id)
+    finally:
+        console_routes._TIMELINE_LIMIT = original
+
+    assert len(entries) == 2, f"the merged timeline returned {len(entries)} rows for a limit of 2"
+
+
+async def test_rendering_a_timeline_does_not_query_once_per_row(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The related rows are read in a fixed number of queries, not a number that grows with rows.
+
+    The earlier shape cost a round trip per column per row. Counting statements rather than timing
+    them keeps this a statement about the shape of the code.
+    """
+
+    from sqlalchemy import event
+
+    from api.routes import console as console_routes
+
+    for index in range(6):
+        await _attempt(
+            async_session,
+            seeded_fixture_data,
+            sku="CLOUD-STARTER",
+            amount_minor=39_900 + index,
+            decision="ALLOW",
+            reasons=[],
+            with_provider_order=True,
+        )
+    await async_session.flush()
+
+    counted = 0
+
+    def count(*_args: object, **_kwargs: object) -> None:
+        nonlocal counted
+        counted += 1
+
+    connection = async_session.get_bind()
+    event.listen(connection, "before_cursor_execute", count)
+    try:
+        entries = await console_routes._timeline(async_session, seeded_fixture_data.tenant_a.id)
+    finally:
+        event.remove(connection, "before_cursor_execute", count)
+
+    assert len(entries) >= 6
+    # Requests, payments, decisions, approvals, orders, and the boundary refusals: a constant.
+    assert counted <= 8, f"rendering {len(entries)} rows took {counted} queries"

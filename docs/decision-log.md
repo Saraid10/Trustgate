@@ -948,3 +948,32 @@ The row colour for an approval now follows whether a human granted it rather tha
 payment reached. An approval is a human decision and the payment moving is its consequence;
 inferring the decision from a state that several paths can produce says less and can be wrong.
 **Slice:** D - M6 console
+
+## 2026-08-26: Findings From a Whole-Repository Audit
+**Decision:** Three defects fixed: the merged console timeline is bounded once rather than twice,
+both console pages carry a strict Content-Security-Policy with `no-referrer`, and the timeline
+reads its related rows in a constant number of queries. Three further findings are documented
+rather than fixed, with reasons.
+**Alternatives considered:** Fixing everything found; documenting everything found.
+**Rationale:** Audited for committed secrets, unscoped tenant queries, non-constant-time secret
+comparisons, unescaped HTML interpolation, assertions in shipped code that `python -O` would strip,
+resource limits, and dependency currency. Secrets, tenant scoping, crypto, escaping, and assertions
+came back clean; the scan for tenant-scoped selects without a tenant filter returned exactly one
+hit, and that one derives its tenant from the row it found and scopes everything downstream to it.
+
+The three fixed defects were real. Payment requests and boundary refusals were each capped at the
+timeline limit and then merged, so a busy tenant could render twice the page anyone asked for. The
+checkout page set a CSP while the two pages that actually render third-party catalog text set
+nothing - the wrong way round, since escaping is what those pages depend on and a policy is what
+should stand behind it. `no-referrer` was added for a reason specific to this design: the tenant id
+is in the path, so any outbound navigation would put it in a Referer header. And the timeline cost
+a round trip per column per row, which was bounded and still the wrong shape to leave in a
+repository people are invited to read.
+
+Documented and not fixed: no rate limiting on token-protected routes, no request body limit outside
+the webhook, and a checkout page reachable by provider order id without authentication. The last is
+how hosted checkout works and is deliberate. The first two are real and belong to a deployment
+posture this testbed does not claim to have; naming them in `docs/limitations.md` is honest, and
+building a rate limiter here would be inventing a production concern the project explicitly says it
+does not address.
+**Slice:** Full-repository audit

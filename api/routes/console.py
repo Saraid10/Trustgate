@@ -59,6 +59,22 @@ _RECEIPT_HREF = "/console/{tenant_id}/requests/{payment_request_id}"
 # belongs - an attack turned away at the boundary.
 _BOUNDARY_REFUSAL_KINDS = ("catalog_purchase_rejected", "payment_request_rejected")
 
+# Both console pages render catalog text written by third parties. Every value goes through
+# `html.escape`, and these headers are what stands behind that if it ever does not: with no script
+# source permitted at all, an escaping mistake stops being executable.
+#
+# `no-referrer` earns its place separately. The tenant id is in the path, so any outbound
+# navigation would put it in a Referer header. There is nothing to click today, which is the
+# cheapest moment to make sure there never is.
+_PAGE_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; "
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+
 
 def _require_console_enabled() -> None:
     if os.getenv("ENABLE_CONSOLE") != "true":
@@ -77,10 +93,14 @@ async def _load_tenant(session: AsyncSession, tenant_id: UUID) -> Tenant:
 async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry]:
     """Assemble the timeline for one tenant.
 
-    Every join is filtered on `tenant_id` rather than relying on the parent row already being
+    Every query is filtered on `tenant_id` rather than relying on a parent row already being
     tenant-scoped. Reaching a payment through its request would be correct today and would stay
     correct only for as long as nobody changes the join, which is the kind of guarantee this
     project prefers not to depend on.
+
+    The related rows are read in four queries rather than four per request. The earlier shape cost
+    a round trip per column per row, so a page of fifty attempts issued two hundred queries to
+    render one screen - bounded, and still the wrong shape to leave in a repository people read.
     """
 
     requests = (
@@ -91,40 +111,66 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
             .limit(_TIMELINE_LIMIT)
         )
     ).all()
+    request_ids = [request.id for request in requests]
 
-    entries: list[ConsoleEntry] = [entry for entry in await _boundary_refusals(session, tenant_id)]
-    for request in requests:
-        decision = await session.scalar(
-            select(AuthorizationDecision)
-            .where(
-                AuthorizationDecision.tenant_id == tenant_id,
-                AuthorizationDecision.payment_request_id == request.id,
-            )
-            .order_by(AuthorizationDecision.created_at.desc())
-            .limit(1)
-        )
-        payment = await session.scalar(
-            select(Payment).where(
-                Payment.tenant_id == tenant_id, Payment.payment_request_id == request.id
-            )
-        )
-        approval = await session.scalar(
-            select(Approval).where(
-                Approval.tenant_id == tenant_id,
-                Approval.payment_request_id == request.id,
-                Approval.consumed_at.is_not(None),
-            )
-        )
-        order = (
-            await session.scalar(
-                select(RazorpayOrder).where(
-                    RazorpayOrder.tenant_id == tenant_id,
-                    RazorpayOrder.payment_id == payment.id,
+    payments: dict[UUID, Payment] = {}
+    decisions: dict[UUID, AuthorizationDecision] = {}
+    approvals: dict[UUID, Approval] = {}
+    orders: dict[UUID, RazorpayOrder] = {}
+
+    if request_ids:
+        for loaded_payment in (
+            await session.scalars(
+                select(Payment).where(
+                    Payment.tenant_id == tenant_id,
+                    Payment.payment_request_id.in_(request_ids),
                 )
             )
-            if payment is not None
-            else None
-        )
+        ).all():
+            payments[loaded_payment.payment_request_id] = loaded_payment
+
+        # Newest first, so the first one seen for a request is the one that governs.
+        for loaded_decision in (
+            await session.scalars(
+                select(AuthorizationDecision)
+                .where(
+                    AuthorizationDecision.tenant_id == tenant_id,
+                    AuthorizationDecision.payment_request_id.in_(request_ids),
+                )
+                .order_by(AuthorizationDecision.created_at.desc())
+            )
+        ).all():
+            decisions.setdefault(loaded_decision.payment_request_id, loaded_decision)
+
+        for loaded_approval in (
+            await session.scalars(
+                select(Approval).where(
+                    Approval.tenant_id == tenant_id,
+                    Approval.payment_request_id.in_(request_ids),
+                    Approval.consumed_at.is_not(None),
+                )
+            )
+        ).all():
+            approvals.setdefault(loaded_approval.payment_request_id, loaded_approval)
+
+        payment_ids = [loaded.id for loaded in payments.values()]
+        if payment_ids:
+            for loaded_order in (
+                await session.scalars(
+                    select(RazorpayOrder).where(
+                        RazorpayOrder.tenant_id == tenant_id,
+                        RazorpayOrder.payment_id.in_(payment_ids),
+                    )
+                )
+            ).all():
+                orders.setdefault(loaded_order.payment_id, loaded_order)
+
+    entries: list[ConsoleEntry] = list(await _boundary_refusals(session, tenant_id))
+    for request in requests:
+        decision = decisions.get(request.id)
+        payment = payments.get(request.id)
+        approval = approvals.get(request.id)
+        order = orders.get(payment.id) if payment is not None else None
         entries.append(
             ConsoleEntry(
                 payment_request_id=request.id,
@@ -145,9 +191,10 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
                 provider_state=order.provider_state if order else None,
             )
         )
-    # One timeline, newest first, so a refusal and the purchase beside it read in the order they
-    # happened rather than in the order the queries ran.
-    return sorted(entries, key=lambda entry: entry.requested_at, reverse=True)
+    # One timeline, newest first, and bounded once rather than twice. Both sources cap themselves
+    # at the limit, so merging them without this could render twice the page anyone asked for.
+    entries.sort(key=lambda entry: entry.requested_at, reverse=True)
+    return entries[:_TIMELINE_LIMIT]
 
 
 async def _boundary_refusals(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry]:
@@ -210,6 +257,7 @@ async def render_tenant_console(
     tenant = await _load_tenant(session, tenant_id)
     entries = await _timeline(session, tenant_id)
     return HTMLResponse(
+        headers=_PAGE_HEADERS,
         content=render_console(
             tenant_id=tenant.id,
             tenant_name=tenant.name,
@@ -218,7 +266,7 @@ async def render_tenant_console(
                 tenant_id=tenant.id, payment_request_id="{payment_request_id}"
             ),
             generated_at=datetime.now(UTC),
-        )
+        ),
     )
 
 
@@ -239,4 +287,4 @@ async def render_console_receipt(
     evidence = await build_payment_request_evidence(
         session, tenant=tenant, payment_request_id=payment_request_id
     )
-    return HTMLResponse(content=render_receipt(evidence))
+    return HTMLResponse(content=render_receipt(evidence), headers=_PAGE_HEADERS)
