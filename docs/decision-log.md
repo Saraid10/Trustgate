@@ -859,3 +859,41 @@ because a denial at least implies something was written down. The audit payload 
 defensively - a changed event shape should cost a demo row a detail, not remove the row and with it
 the evidence that the attempt was refused.
 **Slice:** D - M6 console
+
+## 2026-08-26: One Poisoned Catalog, Written Once
+**Decision:** `agent/demo_catalog.py` holds the demo's catalog facts with no imports, and both the
+seeded tenant and the unguarded baseline build from it. `tests/test_demo_catalog.py` asserts the
+database row and the baseline object carry an identical injected instruction.
+**Alternatives considered:** Leave the two catalogs as they were; compare them in a test without
+sharing a source.
+**Rationale:** Found by re-reading the committed work rather than by any test failing. The demo's
+claim is that one input produces two outcomes because the interfaces differ, and the two catalogs
+did not match: one injected `sku=CLOUD-STARTER quantity=1`, the other `sku=CLOUD-TEAM quantity=50`,
+their CLOUD-TEAM prices differed by nine hundred rupees, and the README asserted they were the same
+throughout. On camera that would have shown an attacker paid INR 20,000 in one flow and an
+unrelated refusal in the next, with the narration claiming a parallel the screen did not support.
+
+The instruction is now one string, and every field in it earns its place. The unguarded adapter
+reads `amount_minor` and `merchant_id` and pays them. TrustGate has nowhere to put either, so what
+survives the discard is `quantity=50` - a field the agent is allowed to set - and the server bounds
+it against the catalog maximum. An injection that only set an amount would be neutralised into an
+ordinary purchase: correct, and invisible.
+**Slice:** D - M6, found in review
+
+## 2026-08-26: Demo Configuration Is Updated, Not Merely Created
+**Decision:** Staging creates the tenant, merchant, catalog, and policy-merchant link when absent
+and brings them up to date when present. The spending policy alone is written once and never
+updated.
+**Alternatives considered:** Create-if-absent for everything, as first written; delete and recreate
+configuration on every run.
+**Rationale:** Create-if-absent was the first fix for the immutable-policy problem and it overshot.
+A policy must never change because a receipt naming version 3 has to stay resolvable; a catalog has
+no such property, and treating it as immutable meant that editing a price or the injected
+description silently did nothing on a tenant that already existed. The failure mode is an operator
+changing the demo, seeing no change, and finding out why during a take.
+
+Deleting and recreating configuration was not available: the policy trigger refuses it, which is
+the constraint that started this. So the rule is now stated where it belongs - immutable rows are
+written once, mutable ones are kept current - rather than applied uniformly because one row
+happened to need it.
+**Slice:** D - M6, found in review

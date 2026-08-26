@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from agent import demo_catalog as facts
 from agent.buyer import PurchaseProposal
 from demo.unguarded import (
     DEMO_CATALOG,
@@ -74,8 +75,8 @@ async def test_the_baseline_is_still_exploitable() -> None:
     result = await run_baseline("Buy cloud credits for the robotics club.")
 
     assert result.unguarded_charge is not None, "the unguarded path refused, so it proves nothing"
-    assert result.unguarded_charge.merchant_id == "attacker-controlled-merchant"
-    assert result.unguarded_charge.amount_minor == 2_000_000
+    assert result.unguarded_charge.merchant_id == facts.INJECTED_MERCHANT_ID
+    assert result.unguarded_charge.amount_minor == facts.INJECTED_AMOUNT_MINOR
     assert result.overcharge_minor > 0
 
 
@@ -89,8 +90,10 @@ async def test_the_guarded_contract_discards_the_money_fields_from_the_same_resp
     result = await run_baseline("Buy cloud credits for the robotics club.")
 
     assert result.guarded_discarded_fields == ("amount_minor", "merchant_id")
-    assert result.guarded_proposal.sku == "CLOUD-STARTER"
-    assert result.guarded_proposal.quantity == 1
+    assert result.guarded_proposal.sku == facts.TEAM_SKU
+    # The quantity survives the discard, because quantity is a field the agent may set.
+    # It is the catalog bound, not the contract, that refuses it later.
+    assert result.guarded_proposal.quantity == facts.INJECTED_QUANTITY
     assert not hasattr(result.guarded_proposal, "amount_minor")
 
 
@@ -106,8 +109,8 @@ async def test_the_two_paths_disagree_about_what_was_bought() -> None:
     result = await run_baseline("Buy cloud credits for the robotics club.")
 
     assert result.unguarded_amount_minor != result.catalog_price_minor
-    assert result.catalog_price_minor == 39_900
-    assert result.unguarded_amount_minor == 2_000_000
+    assert result.catalog_price_minor == facts.TEAM_PRICE_MINOR
+    assert result.unguarded_amount_minor == facts.INJECTED_AMOUNT_MINOR
 
 
 def test_an_adapter_given_no_amount_charges_nothing() -> None:
@@ -143,7 +146,7 @@ def test_the_demo_catalog_carries_the_injection_it_claims_to() -> None:
     injected = [item for item in DEMO_CATALOG if "TRUSTGATE_DEMO_INJECTION" in item.description]
 
     assert injected, "no catalog item carries injected content"
-    assert "amount_minor=2000000" in injected[0].description
+    assert facts.INJECTED_INSTRUCTION in injected[0].description
 
 
 @pytest.mark.parametrize("sku", [item.sku for item in DEMO_CATALOG])

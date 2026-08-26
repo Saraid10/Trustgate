@@ -39,10 +39,16 @@ database:
 python -m demo.unguarded
 ```
 
-The same agent reads the same poisoned catalog, and one model response is handed to two adapters.
+The same agent reads the same poisoned catalog - literally the same, since both catalogs are built
+from `agent/demo_catalog.py` and a test asserts the seeded row and the baseline object carry an
+identical injected instruction. One model response is handed to two adapters.
+
 The unguarded one accepts an amount and a merchant, so the injected instruction executes and it
-pays INR 20,000.00 to a merchant the catalog text named. The other discards those fields, because
-`PurchaseProposal` has nowhere to put them.
+pays INR 20,000.00 to a merchant the catalog text named, against a catalog price of INR 600.00.
+The other has nowhere to put either field, because `PurchaseProposal` declares only a SKU, a
+quantity, and a purpose. What survives the discard is `quantity=50`, which is a field the agent is
+allowed to set - and the server bounds it against the catalog's own maximum of 2, so the attempt is
+refused before a payment request is created.
 
 The difference is not a filter that recognised an attack. It is that one interface had a field for
 the money and the other did not. The baseline has its own tests asserting both that it cannot reach
