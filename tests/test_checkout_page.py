@@ -263,3 +263,23 @@ async def test_each_render_uses_a_fresh_nonce(
     second = (await client.get(path)).headers["Content-Security-Policy"]
 
     assert first != second
+
+
+async def test_the_page_prefills_synthetic_contact_details(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Blank fields ask the presenter to type a real phone number into a recorded page.
+
+    Test Mode delivers nothing to either value, so there is no reason for them to be real, and one
+    good reason for them not to be: the demonstration is filmed and published. The project's rule
+    against putting real customer data through this flow covers the person running it.
+    """
+
+    order = await _confirmed_order(async_session, seeded_fixture_data)
+
+    response = await client.get(f"/api/v1/razorpay/checkout/{order.razorpay_order_id}")
+
+    assert response.status_code == 200
+    assert "9999999999" in response.text
+    assert "demo@example.invalid" in response.text
+    assert "prefill" in response.text

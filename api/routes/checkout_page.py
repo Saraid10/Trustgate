@@ -68,6 +68,11 @@ _SCRIPT_ESCAPES = {
 }
 
 
+# Obviously fake, and valid enough for the checkout form to accept without argument.
+SYNTHETIC_CONTACT = "9999999999"
+SYNTHETIC_EMAIL = "demo@example.invalid"
+
+
 def _script_json(value: object) -> str:
     """Serialise for embedding inside a `<script>` block.
 
@@ -103,6 +108,11 @@ def _render(
             "currency": order.currency,
             "name": "TrustGate",
             "description": request.catalog_name if request else "Purchase",
+            # Synthetic, and prefilled deliberately. Test Mode sends nothing to either of these,
+            # and leaving the fields blank asks whoever is demonstrating to type a real phone
+            # number into a page that is being recorded. The project's rule against putting real
+            # customer data through this demonstration applies to the person running it too.
+            "prefill": {"contact": SYNTHETIC_CONTACT, "email": SYNTHETIC_EMAIL},
             "theme": {"color": "#0d6b67"},
         }
     )
