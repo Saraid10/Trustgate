@@ -26,6 +26,10 @@ from uuid import UUID
 # viewer the opposite of what happened.
 _DECISION_TONE = {"ALLOW": "ok", "REQUIRE_APPROVAL": "warn", "DENY": "bad"}
 
+# States from which no provider order will ever follow. A payment here was refused or expired,
+# so "nothing reached Razorpay" is the end of its story rather than a stage in it.
+_SETTLED_WITHOUT_PROVIDER = frozenset({"DENIED", "EXPIRED", "FAILED", "CANCELLED"})
+
 
 @dataclass(frozen=True)
 class ConsoleEntry:
@@ -74,14 +78,30 @@ class ConsoleEntry:
         return self.payment_request_id is None
 
     @property
+    def awaiting_checkout(self) -> bool:
+        """Authorized, with nothing sent to the provider - and still able to be.
+
+        The state the whole design exists to produce: the agent obtained an authorization and did
+        not obtain the ability to pay. It reads identically to a refusal unless it is named
+        separately, which is why it is a property rather than an inline condition.
+        """
+
+        return (
+            not self.refused_at_the_boundary
+            and not self.reached_provider
+            and self.payment_state is not None
+            and self.payment_state not in _SETTLED_WITHOUT_PROVIDER
+        )
+
+    @property
     def tone(self) -> str:
         if self.decision is None:
             return ""
-        if self.decision == "REQUIRE_APPROVAL" and self.payment_state in {
-            "CAPTURED",
-            "PROVIDER_PENDING",
-        }:
-            return "ok"
+        if self.decision == "REQUIRE_APPROVAL":
+            # Amber while a human has not acted, green once one has. Reading this from the granted
+            # approval rather than from the payment state says what actually happened: an approval
+            # is a human decision, and the payment moving is its consequence.
+            return "ok" if self.approval_granted_by is not None else "warn"
         return _DECISION_TONE.get(self.decision, "")
 
 
@@ -97,12 +117,24 @@ def _text(value: object) -> str:
 
 
 def _outcome_cell(entry: ConsoleEntry) -> str:
-    """The third column: what the provider actually did, or that it was never asked."""
+    """The third column, which has three answers and used to give two of them the same words.
+
+    A refusal and an authorization that has not been taken to checkout are entirely different
+    facts, and both rendered as "Nothing reached Razorpay". On screen that made a working purchase
+    indistinguishable from a blocked one, and it contradicted the sentence the demo needs to say
+    while pointing at it: that the agent obtained an authorization and not the ability to pay.
+    """
 
     if entry.refused_at_the_boundary:
         return (
             "<span class='never'>Nothing reached Razorpay</span>"
             "<span class='muted'>no payment request was created</span>"
+        )
+    if entry.awaiting_checkout:
+        return (
+            "<span class='pending'>Not sent to Razorpay yet</span>"
+            f"<span class='muted'>payment {_text(entry.payment_state)}"
+            " &middot; a human completes checkout</span>"
         )
     if not entry.reached_provider:
         return (
@@ -207,6 +239,7 @@ def render_console(
     blocked = sum(
         1 for entry in entries if entry.decision == "DENY" or entry.refused_at_the_boundary
     )
+    awaiting = sum(1 for entry in entries if entry.awaiting_checkout)
     reached = sum(1 for entry in entries if entry.reached_provider)
 
     return f"""<!doctype html>
@@ -244,6 +277,7 @@ def render_console(
   .amount {{ font-weight: 600; margin-top: .1rem; }}
   .reasons {{ color: #973029; font-size: .78rem; margin-top: .15rem; }}
   .never {{ color: #2c6349; font-weight: 600; }}
+  .pending {{ color: #8c5a0c; font-weight: 600; }}
   tr.ok td:first-child {{ box-shadow: inset 3px 0 0 #2c6349; }}
   tr.warn td:first-child {{ box-shadow: inset 3px 0 0 #8c5a0c; }}
   tr.bad td:first-child {{ box-shadow: inset 3px 0 0 #973029; }}
@@ -259,6 +293,7 @@ def render_console(
     td {{ border-color: #162426; }}
     .purpose {{ color: #e6efef; }}
     .never {{ color: #6fd0a1; }}
+    .pending {{ color: #e0b168; }}
     .reasons {{ color: #ef9a92; }}
     td.link a {{ color: #6fd0a1; }}
   }}
@@ -273,6 +308,7 @@ def render_console(
 <div class="tally">
   <div><span class="n">{len(entries)}</span><span class="l">attempts</span></div>
   <div><span class="n">{blocked}</span><span class="l">refused</span></div>
+  <div><span class="n">{awaiting}</span><span class="l">authorized, not yet paid</span></div>
   <div><span class="n">{reached}</span><span class="l">reached the provider</span></div>
 </div>
 {body}

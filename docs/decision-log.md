@@ -930,3 +930,21 @@ same assertion would have passed happily while this tenant gained an approval an
 
 Found by running the demo, not by reading the test.
 **Slice:** D - M6, found in review
+
+## 2026-08-26: A Refusal and an Unpaid Authorization Are Different Facts
+**Decision:** The console renders three outcomes rather than two: refused before a request existed,
+authorized with nothing sent to the provider, and an order the provider actually holds. The tally
+counts the middle state separately, and an approval turns a row green only once a human has
+granted it.
+**Alternatives considered:** Leave the wording; drop the middle state by only showing rows that
+reached the provider.
+**Rationale:** A refusal and an authorization awaiting checkout both rendered as "Nothing reached
+Razorpay", which made a working purchase indistinguishable from a blocked one. Worse, it
+contradicted the sentence the demo needs to say while pointing at the row: that the agent obtained
+an authorization and did not obtain the ability to pay. That gap is the design, not a missing step,
+so it needs its own words rather than borrowing a refusal's.
+
+The row colour for an approval now follows whether a human granted it rather than which state the
+payment reached. An approval is a human decision and the payment moving is its consequence;
+inferring the decision from a state that several paths can produce says less and can be wrong.
+**Slice:** D - M6 console

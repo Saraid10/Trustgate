@@ -443,3 +443,120 @@ async def test_a_refusal_and_a_purchase_share_one_timeline_in_time_order(
     assert page.index("CLOUD-TEAM") < page.index("CLOUD-STARTER")
     assert "no payment request was created" in page
     assert "ALLOW" in page
+
+
+def _entry(**overrides: object) -> ConsoleEntry:
+    base: dict[str, object] = {
+        "payment_request_id": uuid4(),
+        "requested_at": datetime.now(UTC),
+        "actor_id": "demo-buyer",
+        "source": "MCP_AGENT",
+        "sku": "CLOUD-STARTER",
+        "quantity": 1,
+        "purpose": "Provision a build environment.",
+        "merchant_display_name": "Campus Cloud",
+        "amount_minor": 39_900,
+        "currency": "INR",
+        "decision": "ALLOW",
+        "reasons": (),
+        "approval_granted_by": None,
+        "payment_state": "AUTHORIZED",
+        "provider_order_id": None,
+        "provider_state": None,
+    }
+    base.update(overrides)
+    return ConsoleEntry(**base)  # type: ignore[arg-type]
+
+
+def _render(entry: ConsoleEntry) -> str:
+    return render_console(
+        tenant_id=uuid4(),
+        tenant_name="Demo",
+        entries=[entry],
+        receipt_href="/console/x/requests/{payment_request_id}",
+        generated_at=datetime.now(UTC),
+    )
+
+
+def test_an_authorized_purchase_does_not_read_like_a_refused_one() -> None:
+    """The distinction the demo's whole argument rests on.
+
+    An agent that obtained an authorization and not the ability to pay is the design working. It
+    rendered with the same words as an attack that was turned away, which made a working purchase
+    indistinguishable from a blocked one and contradicted the sentence said while pointing at it.
+    """
+
+    authorized = _render(_entry(payment_state="AUTHORIZED"))
+    refused = _render(_entry(payment_request_id=None, decision="REFUSED", payment_state=None))
+
+    assert "Not sent to Razorpay yet" in authorized
+    assert "a human completes checkout" in authorized
+    assert "Nothing reached Razorpay" not in authorized
+
+    assert "Nothing reached Razorpay" in refused
+    assert "Not sent to Razorpay yet" not in refused
+
+
+def test_a_settled_refusal_is_not_described_as_awaiting_checkout() -> None:
+    """A denied payment is not waiting for anything; no provider order will ever follow it."""
+
+    denied = _render(
+        _entry(decision="DENY", reasons=("AMOUNT_EXCEEDS_LIMIT",), payment_state="DENIED")
+    )
+
+    assert "Nothing reached Razorpay" in denied
+    assert "Not sent to Razorpay yet" not in denied
+
+
+def test_a_captured_purchase_names_the_provider_order() -> None:
+    """The third state, which nothing had ever reached until a real checkout was completed."""
+
+    captured = _render(
+        _entry(
+            payment_state="CAPTURED",
+            provider_order_id="order_QmT4x8Lp2Nk9Zc",
+            provider_state="CONFIRMED",
+        )
+    )
+
+    assert "order_QmT4x8Lp2Nk9Zc" in captured
+    assert "CONFIRMED" in captured
+    assert "Not sent to Razorpay yet" not in captured
+    assert "Nothing reached Razorpay" not in captured
+
+
+def test_an_approval_turns_the_row_green_only_once_a_human_has_granted_it() -> None:
+    """Read from the granted approval, not from the payment state.
+
+    An approval is a human decision and the payment moving is its consequence, so the colour
+    follows the decision rather than inferring it from a state that several paths can produce.
+    """
+
+    waiting = _entry(decision="REQUIRE_APPROVAL", payment_state="APPROVAL_REQUIRED")
+    granted = _entry(
+        decision="REQUIRE_APPROVAL",
+        payment_state="AUTHORIZED",
+        approval_granted_by="a-separate-human",
+    )
+
+    assert waiting.tone == "warn"
+    assert granted.tone == "ok"
+
+
+def test_the_tally_counts_the_middle_state_separately() -> None:
+    """Three numbers for three states, so the header cannot imply nothing worked."""
+
+    page = render_console(
+        tenant_id=uuid4(),
+        tenant_name="Demo",
+        entries=[
+            _entry(payment_state="AUTHORIZED"),
+            _entry(payment_request_id=None, decision="REFUSED", payment_state=None),
+        ],
+        receipt_href="/console/x/requests/{payment_request_id}",
+        generated_at=datetime.now(UTC),
+    )
+
+    assert "authorized, not yet paid" in page
+    assert "reached the provider" in page
+    assert "refused" in page
