@@ -39,6 +39,7 @@ from api.receipt import render_receipt
 from api.routes.evidence import build_payment_request_evidence
 from models.domain import (
     Approval,
+    AuditEvent,
     AuthorizationDecision,
     Payment,
     PaymentRequest,
@@ -52,6 +53,11 @@ router = APIRouter(prefix="/console", tags=["console"])
 _TIMELINE_LIMIT = 50
 
 _RECEIPT_HREF = "/console/{tenant_id}/requests/{payment_request_id}"
+
+# Refusals that happen before a payment request exists. They leave an audit event and nothing else,
+# so a timeline assembled only from requests would be silent exactly where the most important row
+# belongs - an attack turned away at the boundary.
+_BOUNDARY_REFUSAL_KINDS = ("catalog_purchase_rejected", "payment_request_rejected")
 
 
 def _require_console_enabled() -> None:
@@ -86,7 +92,7 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
         )
     ).all()
 
-    entries: list[ConsoleEntry] = []
+    entries: list[ConsoleEntry] = [entry for entry in await _boundary_refusals(session, tenant_id)]
     for request in requests:
         decision = await session.scalar(
             select(AuthorizationDecision)
@@ -137,6 +143,57 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
                 payment_state=payment.state if payment else None,
                 provider_order_id=order.razorpay_order_id if order else None,
                 provider_state=order.provider_state if order else None,
+            )
+        )
+    # One timeline, newest first, so a refusal and the purchase beside it read in the order they
+    # happened rather than in the order the queries ran.
+    return sorted(entries, key=lambda entry: entry.requested_at, reverse=True)
+
+
+async def _boundary_refusals(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry]:
+    """Read attempts that were refused before any payment request was written.
+
+    The audit payload is the only record of what was asked for, because nothing else was created.
+    Its keys are read defensively: an event whose shape changes should lose a detail from a demo
+    row, not remove the row and with it the evidence that the attempt was refused.
+    """
+
+    events = (
+        await session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.tenant_id == tenant_id,
+                AuditEvent.event_kind.in_(_BOUNDARY_REFUSAL_KINDS),
+                AuditEvent.payment_request_id.is_(None),
+            )
+            .order_by(AuditEvent.created_at.desc())
+            .limit(_TIMELINE_LIMIT)
+        )
+    ).all()
+
+    entries: list[ConsoleEntry] = []
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        quantity = payload.get("requested_quantity")
+        reason = payload.get("reason")
+        entries.append(
+            ConsoleEntry(
+                payment_request_id=None,
+                requested_at=event.created_at,
+                actor_id=str(payload.get("actor_id", "agent")),
+                source="MCP_AGENT",
+                sku=str(payload["sku"]) if payload.get("sku") is not None else None,
+                quantity=int(quantity) if isinstance(quantity, int) else None,
+                purpose=None,
+                merchant_display_name=None,
+                amount_minor=None,
+                currency="INR",
+                decision="REFUSED",
+                reasons=(str(reason),) if reason is not None else (),
+                approval_granted_by=None,
+                payment_state=None,
+                provider_order_id=None,
+                provider_state=None,
             )
         )
     return entries

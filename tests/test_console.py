@@ -16,6 +16,7 @@ from api.app import app
 from api.console_view import ConsoleEntry, render_console
 from api.database import get_session
 from models.domain import (
+    AuditEvent,
     AuthorizationDecision,
     CheckoutAuthority,
     Payment,
@@ -348,3 +349,97 @@ def test_hostile_catalog_text_cannot_inject_markup_into_the_timeline() -> None:
     assert "<img" not in page
     assert "&lt;script&gt;" in page
     assert "&lt;img src=x onerror=alert(1)&gt;" in page
+
+
+async def test_an_attempt_refused_before_a_request_existed_still_appears(
+    console_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The row the demo depends on most, and the one a naive timeline loses.
+
+    An attack turned away at the MCP boundary never becomes a payment request, so a timeline built
+    only from requests is silent exactly where the strongest evidence belongs. The audit event is
+    the whole record, and the row says plainly that no request was created - which is a stronger
+    claim than a denial, because a denial at least implies something was written down.
+    """
+
+    async_session.add(
+        AuditEvent(
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            correlation_id=uuid4(),
+            event_kind="catalog_purchase_rejected",
+            payload={
+                "sku": "CLOUD-TEAM",
+                "reason": "QUANTITY_EXCEEDS_LIMIT",
+                "max_quantity": 2,
+                "requested_quantity": 50,
+            },
+        )
+    )
+    await async_session.flush()
+
+    response = await console_client.get(f"/console/{seeded_fixture_data.tenant_a.id}")
+
+    assert response.status_code == 200
+    assert "QUANTITY_EXCEEDS_LIMIT" in response.text
+    assert "no payment request was created" in response.text
+    assert "no amount was derived" in response.text
+    assert "&times;50" in response.text
+
+
+async def test_a_boundary_refusal_offers_no_receipt_to_open(
+    console_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """There is no receipt, so the row must not pretend there is one.
+
+    A dead link on the row that matters most would be the worst place for one, and it would appear
+    only on camera.
+    """
+
+    async_session.add(
+        AuditEvent(
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            correlation_id=uuid4(),
+            event_kind="catalog_purchase_rejected",
+            payload={"sku": "CLOUD-TEAM", "reason": "QUANTITY_EXCEEDS_LIMIT"},
+        )
+    )
+    await async_session.flush()
+
+    response = await console_client.get(f"/console/{seeded_fixture_data.tenant_a.id}")
+
+    assert "no receipt" in response.text
+    assert "/requests/None" not in response.text
+
+
+async def test_a_refusal_and_a_purchase_share_one_timeline_in_time_order(
+    console_client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Two sources, one list. Ordering by query would put the demo's beats out of sequence."""
+
+    await _attempt(
+        async_session,
+        seeded_fixture_data,
+        sku="CLOUD-STARTER",
+        amount_minor=39_900,
+        decision="ALLOW",
+        reasons=[],
+        with_provider_order=True,
+    )
+    async_session.add(
+        AuditEvent(
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            correlation_id=uuid4(),
+            event_kind="catalog_purchase_rejected",
+            payload={"sku": "CLOUD-TEAM", "reason": "QUANTITY_EXCEEDS_LIMIT"},
+        )
+    )
+    await async_session.flush()
+
+    response = await console_client.get(f"/console/{seeded_fixture_data.tenant_a.id}")
+
+    page = response.text
+    # Ordering is the claim, so it is asserted by position rather than by counting: the
+    # refusal was recorded second, so it must render above the purchase.
+    assert page.index("CLOUD-TEAM") < page.index("CLOUD-STARTER")
+    assert "no payment request was created" in page
+    assert "ALLOW" in page

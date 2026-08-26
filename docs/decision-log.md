@@ -824,3 +824,38 @@ test still passes and the demo silently begins showing two identical refusals - 
 goes on claiming a contrast the screen no longer shows. That is worse than deleting the
 demonstration outright, because it fails without telling anyone.
 **Slice:** D - M6 unguarded baseline
+
+## 2026-08-26: Staging Resets History and Leaves Configuration Alone
+**Decision:** `python -m agent.stage` clears the demo tenant's transactional rows between takes and
+creates its tenant, policy, merchant, and catalog only when absent. The tenant id is fixed.
+**Alternatives considered:** Delete and recreate everything; a fresh random tenant per run, as
+`agent.seed` does; truncate the tables.
+**Rationale:** Deleting everything was the first attempt and the database refused it: a trigger
+makes `spending_policy` rows immutable, because an evidence receipt naming policy version 3 has to
+stay resolvable forever. That is a real invariant and demo tooling does not get an exception from
+it, so the tooling changed shape instead. The result is better than what was intended - a viewer's
+"clean state" means an empty timeline, not a deleted tenant, and configuration is not history.
+
+The fixed tenant id is what makes the console URL stable enough to write into a script and rehearse
+against; `agent.seed`'s fresh-tenant-per-run is right for exploring and wrong for filming. Deletes
+are scoped to that one tenant rather than truncating, so staging a demo on a database that also
+holds other work destroys only what the demo produced.
+**Slice:** D - M6 demo staging
+
+## 2026-08-26: The Console Shows Attempts That Never Became Requests
+**Decision:** The timeline merges payment requests with audit events for refusals that happened
+before any request existed, rendered as rows stating that no payment request was created and
+offering no receipt link.
+**Alternatives considered:** Show only payment requests; write a placeholder request row for
+refused attempts so the timeline has one source.
+**Rationale:** Found by running the demo rather than by reading the code. An attack refused at the
+MCP boundary is rejected before a payment request is written, so the first console showed the safe
+purchase and nothing else - silent exactly where the strongest evidence belongs.
+
+Writing a placeholder row would have solved the display problem by weakening the thing being
+displayed: the fact worth showing is precisely that nothing was created. So the row says "no
+payment request was created" and "no amount was derived", which is a stronger claim than a denial,
+because a denial at least implies something was written down. The audit payload is read
+defensively - a changed event shape should cost a demo row a detail, not remove the row and with it
+the evidence that the attempt was refused.
+**Slice:** D - M6 console

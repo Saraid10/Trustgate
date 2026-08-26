@@ -35,7 +35,7 @@ class ConsoleEntry:
     Nothing serialises it; the only consumer is the renderer below.
     """
 
-    payment_request_id: UUID
+    payment_request_id: UUID | None
     requested_at: datetime
     actor_id: str
     source: str
@@ -43,7 +43,7 @@ class ConsoleEntry:
     quantity: int | None
     purpose: str | None
     merchant_display_name: str | None
-    amount_minor: int
+    amount_minor: int | None
     currency: str
     decision: str | None
     reasons: tuple[str, ...]
@@ -61,6 +61,17 @@ class ConsoleEntry:
         """
 
         return self.provider_order_id is not None
+
+    @property
+    def refused_at_the_boundary(self) -> bool:
+        """Whether the attempt was turned away before a payment request existed at all.
+
+        The strongest outcome the system produces, and the easiest to lose: an attack refused at
+        the MCP boundary leaves an audit event and no payment request, so a timeline built only
+        from requests would show nothing where the most important row belongs.
+        """
+
+        return self.payment_request_id is None
 
     @property
     def tone(self) -> str:
@@ -88,6 +99,11 @@ def _text(value: object) -> str:
 def _outcome_cell(entry: ConsoleEntry) -> str:
     """The third column: what the provider actually did, or that it was never asked."""
 
+    if entry.refused_at_the_boundary:
+        return (
+            "<span class='never'>Nothing reached Razorpay</span>"
+            "<span class='muted'>no payment request was created</span>"
+        )
     if not entry.reached_provider:
         return (
             "<span class='never'>Nothing reached Razorpay</span>"
@@ -105,7 +121,13 @@ def _verdict_cell(entry: ConsoleEntry) -> str:
         return "<span class='muted'>No decision recorded</span>"
     reasons = ", ".join(entry.reasons) if entry.reasons else ""
     parts = [f"<strong>{_text(entry.decision)}</strong>"]
-    parts.append(f"<span class='amount'>{_money(entry.amount_minor, entry.currency)}</span>")
+    parts.append(
+        f"<span class='amount'>{_money(entry.amount_minor, entry.currency)}</span>"
+        if entry.amount_minor is not None
+        # Refused before the server derived one. Saying so is stronger than showing a blank: the
+        # attack did not get as far as having a price.
+        else "<span class='muted'>no amount was derived</span>"
+    )
     if reasons:
         parts.append(f"<span class='reasons'>{_text(reasons)}</span>")
     if entry.approval_granted_by is not None:
@@ -123,14 +145,19 @@ def _proposed_cell(entry: ConsoleEntry) -> str:
     )
 
 
-def _row(entry: ConsoleEntry, *, receipt_href: str) -> str:
+def _row(entry: ConsoleEntry, *, receipt_href: str | None) -> str:
+    link = (
+        f"<a href='{html.escape(receipt_href, quote=True)}'>Receipt</a>"
+        if receipt_href is not None
+        else "<span class='muted'>no receipt</span>"
+    )
     return (
         f"<tr class='{entry.tone}'>"
         f"<td class='when'>{_text(entry.requested_at.strftime('%H:%M:%S'))}</td>"
         f"<td class='proposed'>{_proposed_cell(entry)}</td>"
         f"<td class='verdict'>{_verdict_cell(entry)}</td>"
         f"<td class='outcome'>{_outcome_cell(entry)}</td>"
-        f"<td class='link'><a href='{html.escape(receipt_href, quote=True)}'>Receipt</a></td>"
+        f"<td class='link'>{link}</td>"
         "</tr>"
     )
 
@@ -152,7 +179,12 @@ def render_console(
     if entries:
         rows = "".join(
             _row(
-                entry, receipt_href=receipt_href.format(payment_request_id=entry.payment_request_id)
+                entry,
+                receipt_href=(
+                    receipt_href.format(payment_request_id=entry.payment_request_id)
+                    if entry.payment_request_id is not None
+                    else None
+                ),
             )
             for entry in entries
         )
@@ -172,7 +204,9 @@ def render_console(
             "Run the demo flows and reload.</p>"
         )
 
-    blocked = sum(1 for entry in entries if entry.decision == "DENY")
+    blocked = sum(
+        1 for entry in entries if entry.decision == "DENY" or entry.refused_at_the_boundary
+    )
     reached = sum(1 for entry in entries if entry.reached_provider)
 
     return f"""<!doctype html>
