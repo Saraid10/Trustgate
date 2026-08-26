@@ -250,6 +250,26 @@ def _stage_details(base_url: str) -> DemoStage:
     )
 
 
+def _export(stage: DemoStage) -> str:
+    """Print the identity exports in the syntax of the shell that will run them.
+
+    Printing `export` on Windows is not a cosmetic problem: it is an instruction that silently
+    does nothing, and the failure surfaces later as an agent acting for the wrong tenant.
+    """
+
+    if os.name == "nt":
+        lines = (
+            f'$env:MCP_TENANT_ID="{stage.tenant_id}"',
+            f'$env:MCP_ACTOR_ID="{stage.actor_id}"',
+        )
+    else:
+        lines = (
+            f"export MCP_TENANT_ID={stage.tenant_id}",
+            f"export MCP_ACTOR_ID={stage.actor_id}",
+        )
+    return (chr(10) + "               ").join(lines)
+
+
 def _instructions(stage: DemoStage) -> str:
     return f"""
   Demo stage ready. Everything below is synthetic.
@@ -257,8 +277,7 @@ def _instructions(stage: DemoStage) -> str:
   Console      {stage.console_url}
                (requires ENABLE_CONSOLE=true on the API)
 
-  Shell        export MCP_TENANT_ID={stage.tenant_id}
-               export MCP_ACTOR_ID={stage.actor_id}
+  Shell        {_export(stage)}
 
   Flows        0  python -m demo.unguarded
                   no policy layer: the injected instruction executes

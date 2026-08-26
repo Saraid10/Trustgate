@@ -155,3 +155,36 @@ async def test_the_stage_reports_a_console_url_for_the_tenant_it_created(
 
     assert stage.console_url == f"http://127.0.0.1:8000/console/{DEMO_TENANT_ID}"
     assert stage.tenant_id == DEMO_TENANT_ID
+
+
+def test_the_printed_exports_match_the_shell_that_will_run_them() -> None:
+    """Printing `export` on Windows is an instruction that silently does nothing.
+
+    The failure does not appear at the prompt. It appears later, as an agent acting for the wrong
+    tenant, on camera, with no obvious cause.
+    """
+
+    import os
+    from unittest.mock import patch
+
+    from agent.stage import DemoStage, _export
+
+    stage = DemoStage(
+        tenant_id=DEMO_TENANT_ID,
+        actor_id="a-buyer",
+        approver_id="a-human",
+        console_url="http://127.0.0.1:8000/console/x",
+    )
+
+    with patch.object(os, "name", "nt"):
+        windows = _export(stage)
+    with patch.object(os, "name", "posix"):
+        posix = _export(stage)
+
+    assert "$env:MCP_TENANT_ID=" in windows
+    assert "export " not in windows
+    assert "export MCP_TENANT_ID=" in posix
+    assert "$env:" not in posix
+    for shell in (windows, posix):
+        assert str(DEMO_TENANT_ID) in shell
+        assert "a-buyer" in shell
