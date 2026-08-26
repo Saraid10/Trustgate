@@ -147,11 +147,16 @@ async def _main(base_url: str, tenant_id: UUID, request_id: UUID | None, open_pa
         async with SessionLocal() as session:
             payable = await find_payable(session, tenant_id)
         if payable is None:
+            # Naming the tenant is the whole point of this message. "Nothing is waiting" is true
+            # and useless when the reason is that the search looked somewhere else.
             raise CheckoutUnavailableError(
-                "no authorized purchase is waiting for checkout. Run one first, for example: "
+                f"no authorized purchase is waiting for checkout in tenant {tenant_id}. "
+                "Check MCP_TENANT_ID in your shell and in .env - a stale value here sends one "
+                "command's purchase to one tenant and this search to another. Then run: "
                 "python -m agent.demo 'Buy Starter credits for the robotics club.'"
             )
         request_id = payable.payment_request_id
+        print(f"  Tenant           {tenant_id}")
         print(
             f"  Taking {payable.sku or 'purchase'} "
             f"for {payable.currency} {payable.amount_minor / 100:,.2f} to checkout"

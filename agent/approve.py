@@ -126,11 +126,15 @@ async def _main(base_url: str, tenant_id: UUID, payment_request_id: UUID | None)
         async with SessionLocal() as session:
             pending = await find_pending_approval(session, tenant_id)
         if pending is None:
+            # The tenant, for the same reason checkout names it: a stale MCP_TENANT_ID makes
+            # "nothing is waiting" the right answer to the wrong question.
             raise ApprovalUnavailableError(
-                "nothing is waiting for approval. Run a purchase above the approval threshold "
-                "first, for example: python -m agent.demo 'Buy Team credits for the club.'"
+                f"nothing is waiting for approval in tenant {tenant_id}. Check MCP_TENANT_ID in "
+                "your shell and in .env, then run a purchase above the approval threshold: "
+                "python -m agent.demo 'Buy Team credits for the club.'"
             )
         payment_request_id = pending.payment_request_id
+        print(f"  Tenant     {tenant_id}")
         print(
             f"  Approving {pending.sku or 'purchase'} "
             f"for {pending.currency} {pending.amount_minor / 100:,.2f}, "
