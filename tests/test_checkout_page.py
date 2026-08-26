@@ -15,7 +15,7 @@ import pytest
 import pytest_asyncio
 from fixtures import FixtureData
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app import app
@@ -87,7 +87,10 @@ async def _confirmed_order(
         policy_version=data.tenant_a_policy.version,
         snapshot_hash="d" * 64,
         expires_at=datetime.now(UTC) + timedelta(minutes=15),
-        used_at=datetime.now(UTC),
+        # Postgres stamps created_at from its own clock, so used_at must come from the same one.
+        # A host-clock timestamp here fails `used_at >= created_at` whenever the container clock
+        # drifts ahead, which under Docker Desktop it does.
+        used_at=func.now(),
     )
     session.add(authority)
     await session.flush()

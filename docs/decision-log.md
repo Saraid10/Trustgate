@@ -997,3 +997,25 @@ It selects a purchase that is authorized and has no provider order yet. The serv
 order for one authority, but a demo that asks for one and gets refused on camera is worse than one
 that does not ask.
 **Slice:** D - M6 checkout
+
+## 2026-08-26: A Fixture Must Not Race the Database Clock
+**Decision:** Test fixtures set `CheckoutAuthority.used_at` with `func.now()` rather than
+`datetime.now(UTC)`, and `tests/test_fixture_discipline.py` fails on any reintroduction.
+**Alternatives considered:** Retry the flaky test; widen the CHECK constraint to tolerate skew;
+synchronise the container clock.
+**Rationale:** One intermittent failure in a concurrency test, reproduced on the second of
+twenty-five full runs, turned out to have nothing to do with concurrency. `created_at` is
+`server_default=func.now()`, stamped by Postgres from Postgres's clock, and the constraint
+`used_at >= created_at` therefore held only while two machines agreed about the time. They did not:
+the Docker Desktop container clock measured 854ms ahead of the Windows host while this was being
+diagnosed, and it drifts.
+
+Seven test files carried the fault. Widening the constraint was rejected outright - it is a real
+invariant about a real ordering, and loosening a production rule to accommodate a test fixture is
+the wrong direction. Synchronising the clock fixes one machine and not CI, not a teammate's, and
+not the next one.
+
+The failure was expensive to find for a reason worth recording: it surfaced several layers from its
+cause, in an assertion that reported a bare count and discarded the exception it had been handed.
+The diagnostic fix landed first, and this was found immediately after.
+**Slice:** Flake investigation

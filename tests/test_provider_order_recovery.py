@@ -18,7 +18,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from fixtures import FixtureData
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routes.razorpay import _reconcile_intent
@@ -85,7 +85,10 @@ async def _pending_intent(
         policy_version=data.tenant_a_policy.version,
         snapshot_hash="c" * 64,
         expires_at=datetime.now(UTC) + timedelta(minutes=15),
-        used_at=datetime.now(UTC),
+        # Postgres stamps created_at from its own clock, so used_at must come from the same one.
+        # A host-clock timestamp here fails `used_at >= created_at` whenever the container clock
+        # drifts ahead, which under Docker Desktop it does.
+        used_at=func.now(),
     )
     session.add(authority)
     await session.flush()

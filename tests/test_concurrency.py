@@ -413,7 +413,10 @@ async def test_pending_intent_race_creates_only_one_provider_order() -> None:
                 policy_version=1,
                 snapshot_hash=_snapshot_hash(request, 1),
                 expires_at=datetime.now(UTC) + timedelta(minutes=10),
-                used_at=datetime.now(UTC),
+                # Postgres stamps created_at from its own clock, so used_at must come
+                # from the same one. A host-clock timestamp fails `used_at >= created_at`
+                # whenever the container clock drifts ahead, which Docker Desktop's does.
+                used_at=func.now(),
             )
         )
         session.add(
