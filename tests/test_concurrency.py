@@ -33,6 +33,7 @@ from models.domain import (
     SpendingPolicy,
     Tenant,
 )
+from models.locking import locked
 from policy_engine.evaluate import reserve_daily_spend
 from state_machine.transitions import IllegalTransitionError, transition
 
@@ -414,13 +415,16 @@ async def test_pending_intent_race_creates_only_one_provider_order() -> None:
     async def claim(session: AsyncSession) -> str | None:
         """Mirror the recovery branch: lock, reconcile, then create if nothing exists."""
 
+        # Through `locked()`, because the branch this mirrors goes through it. A simulation that
+        # locks differently from production is exercising a path production does not have - and
+        # this one would have been locking without the freshness the helper guarantees.
         intent = await session.scalar(
-            select(RazorpayOrder)
-            .where(
-                RazorpayOrder.tenant_id == data.tenant_id,
-                RazorpayOrder.checkout_authority_id == authority_id,
+            locked(
+                select(RazorpayOrder).where(
+                    RazorpayOrder.tenant_id == data.tenant_id,
+                    RazorpayOrder.checkout_authority_id == authority_id,
+                )
             )
-            .with_for_update()
         )
         assert intent is not None
         if intent.provider_state == "CONFIRMED":
