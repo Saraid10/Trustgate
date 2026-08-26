@@ -18,8 +18,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI
-from fixtures import FixtureData
+from fixtures import FixtureData, assert_route_scan_works, served_routes
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -103,29 +102,6 @@ async def mcp_call(
         return result
 
     return call
-
-
-def _registered_paths(application: FastAPI) -> list[str]:
-    """Every state-changing path the app actually serves.
-
-    FastAPI keeps an included router as a single wrapper object rather than flattening its routes
-    into `app.routes`, so a naive scan of the top level sees almost nothing and would let a scenario
-    claiming "no such route exists" pass by looking in the wrong place. This walks into the
-    wrappers, and read-only verbs are dropped because the question is what can be initiated.
-    """
-
-    paths: list[str] = []
-    pending: list[object] = list(application.routes)
-    while pending:
-        route = pending.pop()
-        nested = getattr(route, "routes", None)
-        if nested:
-            pending.extend(nested)
-            continue
-        methods = set(getattr(route, "methods", set()) or set())
-        if methods - {"GET", "HEAD", "OPTIONS"}:
-            paths.append(str(getattr(route, "path", "")))
-    return paths
 
 
 def _headers(data: FixtureData) -> dict[str, str]:
@@ -916,7 +892,17 @@ async def test_a10_no_surface_anywhere_can_initiate_a_refund() -> None:
     assert tools, "no MCP tools were exposed, so this proves nothing"
     assert not {tool.name for tool in tools if "refund" in tool.name.lower()}
 
-    refund_routes = [path for path in _registered_paths(app) if "refund" in path.lower()]
+    # The scan is verified before it is trusted. This assertion previously ran against a walk that
+    # could not see any application route, so "no refund route exists" was true of a search that
+    # examined nothing - a registered Tier A claim resting on an empty list.
+    routes = served_routes(app)
+    assert_route_scan_works(routes)
+
+    refund_routes = [
+        (sorted(methods), path)
+        for methods, path in routes
+        if "refund" in path.lower() and set(methods) - {"GET", "HEAD", "OPTIONS"}
+    ]
     assert not refund_routes, f"a refund-initiating route now exists: {refund_routes}"
 
 

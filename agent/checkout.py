@@ -31,6 +31,9 @@ from agent.stage import DEMO_TENANT_ID
 from api.database import SessionLocal
 from models.domain import Payment, PaymentRequest, RazorpayOrder
 
+# Must match `api.routes.checkout_page`'s router prefix plus its path.
+CHECKOUT_PAGE_PREFIX = "/api/v1/razorpay/checkout"
+
 
 class CheckoutUnavailableError(RuntimeError):
     """Raised with a message an operator can act on mid-demo."""
@@ -138,7 +141,10 @@ async def prepare_checkout(
         "razorpay_order_id": order["razorpay_order_id"],
         "amount_minor": order["amount_minor"],
         "currency": order["currency"],
-        "checkout_url": f"{root}/checkout/{order['razorpay_order_id']}",
+        # The page lives under the razorpay router's prefix. Built wrong once, and the failure was
+        # a 404 in a browser after a real provider order had already been created and an authority
+        # spent - the most expensive place in the flow to discover a typo.
+        "checkout_url": f"{root}{CHECKOUT_PAGE_PREFIX}/{order['razorpay_order_id']}",
     }
 
 

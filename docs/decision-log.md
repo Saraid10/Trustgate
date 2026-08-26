@@ -1019,3 +1019,35 @@ The failure was expensive to find for a reason worth recording: it surfaced seve
 cause, in an assertion that reported a bare count and discarded the exception it had been handed.
 The diagnostic fix landed first, and this was found immediately after.
 **Slice:** Flake investigation
+
+## 2026-08-26: An Absence Assertion Must Prove Its Search Can Find Things
+**Decision:** Route scans go through `served_routes()`, which descends into included routers, and
+every caller first runs `assert_route_scan_works()` against paths known to exist.
+**Alternatives considered:** Fix the walk and leave the assertions as they were.
+**Rationale:** Found while chasing a 404 in the demo's checkout URL. FastAPI keeps an included
+router as a wrapper exposing `original_router` rather than flattening its routes into
+`app.routes`, so a walk that follows only `.routes` sees five paths - the framework's own - and no
+application route at all.
+
+Three tests asserted "no route under X does Y" against that walk. All three passed by finding
+nothing, including `test_a10_no_surface_anywhere_can_initiate_a_refund`, which is a registered Tier
+A scenario and appears in the published attack matrix. The matrix was claiming a covered attack
+whose test examined an empty list.
+
+Fixing the walk alone would have left the same shape in place: an assertion that something is
+absent is worth nothing unless the search is known to be capable of finding it. So the scan is now
+verified against known-present routes before any absence is claimed, and both scans were confirmed
+to fail against a deliberately added `POST /console/{tenant_id}/refund` - which neither noticed
+before.
+**Slice:** Found while fixing the checkout URL
+
+## 2026-08-26: The Checkout URL Is Checked Against the Route Table
+**Decision:** `agent.checkout` builds its page URL from `CHECKOUT_PAGE_PREFIX`, and a test asserts
+that path is one the application actually serves.
+**Alternatives considered:** Leave it as a string literal.
+**Rationale:** It was built as `{base}/checkout/{order_id}` while the page lives under the razorpay
+router's prefix at `/api/v1/razorpay/checkout/{order_id}`. Every test around it mocked the HTTP
+layer, so nothing noticed until a browser opened the link - after a real provider order had been
+created and a one-time authority spent. That is the most expensive point in the flow at which to
+find a typo, and on a recording it would have been unrecoverable without restaging.
+**Slice:** D - M6 checkout

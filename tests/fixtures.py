@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest_asyncio
+from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from models.domain import (
@@ -307,3 +308,45 @@ async def seeded_fixture_data(async_session: AsyncSession) -> FixtureData:
         payment=payment,
         webhook_signing_secrets={tenant_a.id: "tenant-a-secret", tenant_b.id: "tenant-b-secret"},
     )
+
+
+def served_routes(application: FastAPI) -> list[tuple[frozenset[str], str]]:
+    """Every path the application actually serves, as (methods, path).
+
+    FastAPI keeps an included router as a wrapper exposing `original_router` rather than flattening
+    its routes into `app.routes`. A walk that follows only `.routes` therefore finds the four
+    default endpoints and `/health`, and nothing else.
+
+    That matters more than it sounds. Three tests asserted "no route under X does Y" against such a
+    walk, and every one of them passed by finding no routes at all - including a registered Tier A
+    scenario claiming no surface can initiate a refund. An assertion that something is absent is
+    worthless unless the search is known to be capable of finding it, which is what
+    `assert_route_scan_works` is for.
+    """
+
+    found: list[tuple[frozenset[str], str]] = []
+    pending: list[object] = list(application.routes)
+    while pending:
+        route = pending.pop()
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            pending.extend(original.routes)
+            continue
+        nested = getattr(route, "routes", None)
+        if nested:
+            pending.extend(nested)
+            continue
+        methods = frozenset(getattr(route, "methods", set()) or set())
+        found.append((methods, str(getattr(route, "path", ""))))
+    return found
+
+
+def assert_route_scan_works(routes: list[tuple[frozenset[str], str]]) -> None:
+    """Fail if the scan is blind, so an absence assertion cannot pass by finding nothing."""
+
+    paths = {path for _, path in routes}
+    for known in ("/health", "/api/v1/catalog-payment-requests"):
+        assert known in paths, (
+            f"the route scan cannot see {known!r}, so any assertion that a route is absent "
+            f"proves nothing. It found: {sorted(paths)[:8]}"
+        )

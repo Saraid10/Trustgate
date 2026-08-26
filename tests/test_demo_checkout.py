@@ -6,11 +6,16 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from fixtures import FixtureData
+from fixtures import FixtureData, assert_route_scan_works, served_routes
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.checkout import CheckoutUnavailableError, find_payable, prepare_checkout
+from agent.checkout import (
+    CHECKOUT_PAGE_PREFIX,
+    CheckoutUnavailableError,
+    find_payable,
+    prepare_checkout,
+)
 from models.domain import CheckoutAuthority, Payment, PaymentRequest, RazorpayOrder
 
 
@@ -168,7 +173,7 @@ async def test_both_calls_carry_the_tenant_header_and_hit_the_documented_routes(
         f"/api/v1/razorpay/checkout-authorities/{authority_id}/orders",
         str(tenant_id),
     )
-    assert result["checkout_url"] == "http://testserver/checkout/order_ABC123"
+    assert result["checkout_url"] == f"http://testserver{CHECKOUT_PAGE_PREFIX}/order_ABC123"
 
 
 async def test_a_refusal_names_which_step_failed_and_why() -> None:
@@ -189,3 +194,26 @@ async def test_a_refusal_names_which_step_failed_and_why() -> None:
     message = str(raised.value)
     assert "issuing the checkout authority" in message
     assert "CHECKOUT_AUTHORITY_POLICY_DRIFT" in message
+
+
+def test_the_printed_checkout_url_is_a_route_the_app_actually_serves() -> None:
+    """The URL is built by string concatenation, so nothing checks it until a human clicks it.
+
+    It was built without the razorpay router's prefix once. The failure was a 404 in a browser,
+    after a real provider order had been created and a one-time authority spent - the most
+    expensive point in the flow at which to find a typo, and invisible to every other test here
+    because they all mock the HTTP layer.
+    """
+
+    from api.app import app
+
+    routes = served_routes(app)
+    assert_route_scan_works(routes)
+
+    served = {path for _, path in routes}
+    expected = f"{CHECKOUT_PAGE_PREFIX}/{{razorpay_order_id}}"
+
+    assert expected in served, (
+        f"agent.checkout points at {expected!r}, which the app does not serve. "
+        f"Checkout-ish routes it does serve: {sorted(p for p in served if 'checkout' in p)}"
+    )

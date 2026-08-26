@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from fixtures import FixtureData
+from fixtures import FixtureData, assert_route_scan_works, served_routes
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,32 +158,23 @@ async def test_the_console_offers_no_way_to_change_anything() -> None:
     """The console is a window, not a control panel.
 
     An approve or authorize button here would make it a new authority surface, and the project's
-    claim that authority is reachable only through the checked paths would need an asterisk. This
-    asserts against the app's live route table rather than against the routes this test remembers,
-    so adding a state-changing console route fails here.
+    claim that authority is reachable only through the checked paths would need an asterisk.
+
+    The scan is verified before it is trusted. This test previously walked `app.routes` without
+    descending into included routers, so it examined five paths, none of them the console's, and
+    passed by finding nothing.
     """
 
+    routes = served_routes(app)
+    assert_route_scan_works(routes)
+
+    console = [(sorted(methods), path) for methods, path in routes if path.startswith("/console")]
+    assert console, "the scan found no console routes at all, so it proves nothing"
+
     changing = [
-        (sorted(getattr(route, "methods", set()) or set()), path)
-        for route in _walk(app)
-        if (path := str(getattr(route, "path", ""))).startswith("/console")
-        and (set(getattr(route, "methods", set()) or set()) - {"GET", "HEAD", "OPTIONS"})
+        (methods, path) for methods, path in console if set(methods) - {"GET", "HEAD", "OPTIONS"}
     ]
-
     assert not changing, f"the console gained a state-changing route: {changing}"
-
-
-def _walk(application: object) -> list[object]:
-    found: list[object] = []
-    pending: list[object] = list(getattr(application, "routes", []))
-    while pending:
-        route = pending.pop()
-        nested = getattr(route, "routes", None)
-        if nested:
-            pending.extend(nested)
-            continue
-        found.append(route)
-    return found
 
 
 async def test_an_unknown_tenant_is_refused_without_saying_which_ones_exist(
