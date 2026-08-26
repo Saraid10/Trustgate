@@ -159,6 +159,23 @@ async def _cleanup(session_factory: async_sessionmaker[AsyncSession], tenant_id:
         await session.commit()
 
 
+def _describe(results: list[object | Exception]) -> str:
+    """Render race results so a failure names the exception it was handed.
+
+    `_race` returns exceptions as values rather than raising, so a test can assert on which one
+    each caller got. The cost is that an assertion like `sum(not isinstance(r, Exception) ...) == 2`
+    reports `1 == 2` and silently discards the traceback it is holding.
+
+    That is how a concurrency failure becomes unexplainable the moment it stops reproducing, which
+    is exactly what happened once here. Every assertion over `results` carries this now.
+    """
+
+    return " | ".join(
+        f"{type(result).__name__}: {result}" if isinstance(result, Exception) else f"ok={result!r}"
+        for result in results
+    )
+
+
 async def _race(
     session_factory: async_sessionmaker[AsyncSession],
     operation: Callable[[AsyncSession], Awaitable[object]],
@@ -202,8 +219,8 @@ async def test_daily_spend_reservation_race_allows_only_one_final_reservation() 
                 )
             )
 
-        assert results.count(True) == 1
-        assert results.count(False) == 1
+        assert results.count(True) == 1, _describe(results)
+        assert results.count(False) == 1, _describe(results)
         assert reserved == 60
     finally:
         await _cleanup(sessions, data.tenant_id)
@@ -243,7 +260,7 @@ async def test_approval_consumption_race_authorizes_only_one_caller() -> None:
             )
 
         results = await _race(sessions, authorize)
-        assert sum(not isinstance(result, Exception) for result in results) == 1
+        assert sum(not isinstance(result, Exception) for result in results) == 1, _describe(results)
         async with sessions() as session:
             consumed_at = await session.scalar(
                 select(Approval.consumed_at).where(Approval.id == approval_id)
@@ -288,8 +305,10 @@ async def test_checkout_authority_race_consumes_only_one_authority() -> None:
                 correlation_id=uuid4(),
             ),
         )
-        assert sum(not isinstance(result, Exception) for result in results) == 1
-        assert sum(isinstance(result, CheckoutAuthorityUnavailableError) for result in results) == 1
+        assert sum(not isinstance(result, Exception) for result in results) == 1, _describe(results)
+        assert (
+            sum(isinstance(result, CheckoutAuthorityUnavailableError) for result in results) == 1
+        ), _describe(results)
     finally:
         await _cleanup(sessions, data.tenant_id)
         await engine.dispose()
@@ -439,7 +458,7 @@ async def test_pending_intent_race_creates_only_one_provider_order() -> None:
 
     try:
         results = await _race(sessions, claim)
-        assert sum(not isinstance(result, Exception) for result in results) == 2
+        assert sum(not isinstance(result, Exception) for result in results) == 2, _describe(results)
         assert len(created) == 1, f"both callers created an order: {created}"
         async with sessions() as session:
             rows = list(
