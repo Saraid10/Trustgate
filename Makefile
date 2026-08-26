@@ -1,4 +1,4 @@
-.PHONY: check-slice-1 check-slice-2 check-slice-3 scenario-tier-a verify-migrations mutation
+.PHONY: check-slice-1 check-slice-2 check-slice-3 scenario-tier-a verify-migrations mutation verify
 
 check-slice-1:
 	ruff check .
@@ -20,4 +20,18 @@ verify-migrations:
 
 # Breaks each safety invariant on purpose and requires its guarding tests to fail.
 mutation:
+	python -m scenarios.mutation
+
+# The full local gate, in the order CI runs it. Each step is its own recipe line, so make stops on
+# the first non-zero exit rather than reporting the last one.
+#
+# This exists because a chain like `pytest -q | tail -2 && git commit` does not do what it looks
+# like it does: the pipeline's exit code is tail's, which is always zero, so a failing suite lets
+# the commit through. Reading the printed summary is not a substitute for an exit code.
+verify:
+	python -m ruff check .
+	python -m ruff format --check .
+	python -m mypy
+	python -m alembic check
+	python -m pytest -q
 	python -m scenarios.mutation
