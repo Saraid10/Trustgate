@@ -977,3 +977,23 @@ posture this testbed does not claim to have; naming them in `docs/limitations.md
 building a rate limiter here would be inventing a production concern the project explicitly says it
 does not address.
 **Slice:** Full-repository audit
+
+## 2026-08-26: The Demo Can Now Reach the Provider
+**Decision:** `python -m agent.checkout` issues a checkout authority and creates the provider order
+it permits, then prints the payment URL. Both calls go over HTTP with the tenant header, using the
+operator routes that already existed.
+**Alternatives considered:** Have the buyer agent do it; add a button to the console; leave the demo
+ending at `AUTHORIZED`.
+**Rationale:** The demo stopped at `AUTHORIZED`, which is the interesting state and not a finished
+story, and the console's "reached the provider" counter therefore read zero for every row - a screen
+on which a working purchase and a blocked one looked equally inert.
+
+The agent does not do this, and that is the point being demonstrated: it obtained an authorization
+and did not obtain the ability to pay. Wiring these calls into the buyer would have handed it the
+second thing while the narration claimed it only had the first. A console button was rejected for
+the reason the console has no buttons.
+
+It selects a purchase that is authorized and has no provider order yet. The server refuses a second
+order for one authority, but a demo that asks for one and gets refused on camera is worse than one
+that does not ask.
+**Slice:** D - M6 checkout

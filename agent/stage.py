@@ -264,7 +264,8 @@ def _instructions(stage: DemoStage) -> str:
                   no policy layer: the injected instruction executes
 
                1  python -m agent.demo "Buy Starter credits for the robotics club."
-                  INR 399, under the approval threshold, allowed
+                  python -m agent.checkout --open
+                  INR 399, allowed, then taken to a real Razorpay Test Mode order
 
                2  python -m agent.demo "Buy Team credits for the robotics club."
                   python -m agent.approve

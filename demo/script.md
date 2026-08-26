@@ -106,6 +106,22 @@ paid`, `0 reached the provider`.
 
 > That third counter is the state this whole design exists to produce.
 
+Now take it to the provider:
+
+```bash
+python -m agent.checkout --open
+```
+
+That issues a one-time checkout authority, creates a real Razorpay Test Mode order from the
+snapshot it is bound to, and opens the payment page. Pay with `4111 1111 1111 1111`, any future
+expiry, any CVV.
+
+> That authority is bound to a hash of this exact purchase, expires in fifteen minutes, and is
+> consumed by the order that just used it. It cannot be spent twice.
+
+Refresh the console. The row now names a real `order_...` and the counter reads
+`1 reached the provider`.
+
 Click **Receipt**. Let the three columns sit on screen for a beat.
 
 > Proposed, derived, provider outcome. The evidence record is assembled from the rows themselves,
