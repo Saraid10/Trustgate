@@ -174,13 +174,14 @@ REGISTRY: tuple[Scenario, ...] = (
         title="Policy drift between authorization and use",
         invariant=(
             "An authority does not outlive the policy it was checked against, nor the purchase it "
-            "was issued for. A superseding policy or an edited amount revokes it without burning "
-            "it, and an undrifted authority still works."
+            "was issued for. A superseding policy, an expired one, or an edited amount revokes "
+            "it without burning it, and an undrifted authority still works."
         ),
         test_names=(
             "test_a13_an_authority_is_valid_until_the_policy_under_it_moves",
             "test_a13_a_policy_published_after_authorization_revokes_the_authority",
             "test_a13_an_amount_edited_after_authorization_breaks_the_snapshot_hash",
+            "test_a13_an_expired_policy_cannot_spend_an_authority",
         ),
     ),
     Scenario(

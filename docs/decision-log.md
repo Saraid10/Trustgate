@@ -1078,3 +1078,22 @@ Only the safety scenarios run optimized rather than the whole suite: the propert
 that the safety checks survive, and a full second suite run for that would cost minutes on every
 push to prove nothing further.
 **Slice:** M0 backfill, found by auditing the build plan's Definition of Done
+
+## 2026-08-27: An Expired Policy Could Have Spent a Checkout Authority
+**Decision:** A13 gains a fourth test and the mutation suite a matching entry: an authority bound to
+a policy that has since expired is refused, and deleting that condition now fails a test.
+**Alternatives considered:** None. This was a hole, not a trade-off.
+**Rationale:** `consume_checkout_authority` revokes an authority on four conditions - a missing
+policy, a version that moved, an expired policy, and a purchase whose snapshot hash no longer
+matches. Two of them had tests and mutations. The expiry did not.
+
+Deleting `or policy.expiry <= datetime.now(UTC)` and running the full suite left all 302 tests
+green. An authority issued under a policy that had since run out could have been spent, and nothing
+in the project would have objected.
+
+The new test isolates expiry deliberately: the authority is bound to the newest policy version, so
+version drift cannot be what refuses it and the expiry is the only condition left. Found by
+enumerating the branches of a safety check and asking which of them anything actually watches -
+which is the same question the mutation suite exists to ask, applied by hand to a function whose
+conditions had never been listed out.
+**Slice:** Second full-repository audit

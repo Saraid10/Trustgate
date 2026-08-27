@@ -128,6 +128,16 @@ MUTATIONS: tuple[Mutation, ...] = (
         ),
     ),
     Mutation(
+        name="authority-policy-expiry",
+        invariant="An authority cannot be spent under a policy that has run out.",
+        path="api/routes/checkout_authorities.py",
+        original="            or policy.expiry <= datetime.now(UTC)\n",
+        mutated="",
+        guarding_tests=(
+            "tests/test_scenarios_tier_a.py::test_a13_an_expired_policy_cannot_spend_an_authority",
+        ),
+    ),
+    Mutation(
         name="authority-snapshot-binding",
         invariant="An authority is bound to the exact purchase it was issued for.",
         path="api/routes/checkout_authorities.py",

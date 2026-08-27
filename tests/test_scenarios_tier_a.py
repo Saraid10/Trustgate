@@ -1417,6 +1417,89 @@ async def test_a13_a_policy_published_after_authorization_revokes_the_authority(
     assert_attack_created_nothing(before, after)
 
 
+async def test_a13_an_expired_policy_cannot_spend_an_authority(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The third drift vector, and the one nothing was watching.
+
+    An authority is revoked if the policy version moved, if the purchase changed, or if the policy
+    it was checked against has expired. The first two had tests; this one did not. Deleting the
+    expiry condition from `consume_checkout_authority` left the entire suite green, which means an
+    authority issued under a policy that has since run out could still have been spent.
+
+    Version drift is deliberately excluded here. The authority is bound to the newest policy, so
+    the version matches and the expiry is the only thing left to refuse it.
+    """
+
+    policy = seeded_fixture_data.tenant_a_policy
+    expired = SpendingPolicy(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        version=policy.version + 1,
+        max_amount_minor=policy.max_amount_minor,
+        currency=policy.currency,
+        max_daily_spend_minor=policy.max_daily_spend_minor,
+        approval_required_above_minor=policy.approval_required_above_minor,
+        expiry=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    async_session.add(expired)
+    await async_session.flush()
+
+    request = PaymentRequest(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        actor_id=seeded_fixture_data.tenant_a_actor_one,
+        merchant_id=seeded_fixture_data.tenant_a_allowed_merchant.id,
+        amount_minor=25_000,
+        currency="INR",
+        order_ref=f"order-{uuid4()}",
+        idempotency_key=str(uuid4()),
+    )
+    async_session.add(request)
+    await async_session.flush()
+    payment = Payment(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        payment_request_id=request.id,
+        state="AUTHORIZED",
+        authorized_amount_minor=25_000,
+        captured_amount_minor=0,
+        refunded_amount_minor=0,
+    )
+    async_session.add(payment)
+    await async_session.flush()
+    authority = CheckoutAuthority(
+        id=uuid4(),
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        payment_request_id=request.id,
+        payment_id=payment.id,
+        approval_id=None,
+        # Bound to the newest policy, so version drift cannot be what refuses it.
+        policy_version=expired.version,
+        snapshot_hash=_snapshot_hash(request, expired.version),
+        expires_at=datetime.now(UTC) + timedelta(minutes=15),
+    )
+    async_session.add(authority)
+    await async_session.flush()
+    before = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+
+    with pytest.raises(CheckoutAuthorityUnavailableError) as raised:
+        await consume_checkout_authority(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            checkout_authority_id=authority.id,
+            correlation_id=uuid4(),
+        )
+
+    after = await snapshot_tenant(async_session, seeded_fixture_data.tenant_a.id)
+    used_at = await async_session.scalar(
+        select(CheckoutAuthority.used_at).where(CheckoutAuthority.id == authority.id)
+    )
+    assert raised.value.reason == "CHECKOUT_AUTHORITY_POLICY_DRIFT"
+    assert used_at is None, "a refused authority was marked used, silently burning it"
+    assert_attack_created_nothing(before, after)
+
+
 async def test_a13_an_amount_edited_after_authorization_breaks_the_snapshot_hash(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
