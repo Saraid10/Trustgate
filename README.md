@@ -139,6 +139,11 @@ TrustGate uses only synthetic tenants, merchants, and INR prices. It is a local 
 a payment processor, compliance product, legal-consent system, fraud model, or Live Mode payment
 integration.
 
+[`docs/limitations.md`](docs/limitations.md) names every deliberate cut, including the unflattering
+ones: tenant identity is a header and not authentication, one webhook secret serves all tenants,
+receipts are traceable but not tamper-evident, and there is no rate limiting anywhere. A limitation
+you have to discover is worse than one that is written down.
+
 ## Quickstart
 
 Requirements: Docker Desktop and Python 3.12.
