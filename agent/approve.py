@@ -115,7 +115,12 @@ async def grant(
         detail = response.json().get("detail", response.text)
         raise ApprovalUnavailableError(f"the server refused the approval: {detail}")
     body = response.json()
-    assert isinstance(body, dict)
+    if not isinstance(body, dict):
+        # An explicit check rather than an assert: `python -O` strips assertions, and a narrowing
+        # that vanishes under optimisation turns a clear error into a confusing one further down.
+        raise ApprovalUnavailableError(
+            f"the server returned {type(body).__name__} where an object was expected"
+        )
     return body
 
 

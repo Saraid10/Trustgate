@@ -1051,3 +1051,30 @@ layer, so nothing noticed until a browser opened the link - after a real provide
 created and a one-time authority spent. That is the most expensive point in the flow at which to
 find a typo, and on a recording it would have been unrecoverable without restaging.
 **Slice:** D - M6 checkout
+
+## 2026-08-27: The Optimized-Mode Claim Is Now Tested, Not Just Stated
+**Decision:** `make verify-optimized` and a CI step run the harness and Tier A suites under
+`python -O`. Shipped packages contain no `assert` at all, enforced by
+`tests/test_optimized_mode.py`.
+**Alternatives considered:** Leave the reasoning in the harness docstring, as it had been for the
+whole project; run the entire suite optimized rather than the safety scenarios.
+**Rationale:** `scenarios/tier_a/harness.py` opens by explaining that it raises `ScenarioViolation`
+rather than using `assert`, because `python -O` strips assertions and an assert-based harness would
+"report every scenario as passing under optimisation while verifying nothing". That reasoning is
+correct, it is one of the better decisions in this project, and nothing had ever run under `-O` to
+confirm it. The build plan's own Definition of Done required exactly this and it was never done.
+
+Reintroducing the mistake settled it. Replacing the harness's five explicit raises with asserts and
+running the harness suite optimized produces `DID NOT RAISE` on every violation case: under `-O`
+the checks do not weaken, they disappear. Normal mode caught it too, but for the uninteresting
+reason that the exception type changed.
+
+The two remaining asserts in shipped code were type narrowings after a JSON parse, in demo tooling
+rather than the authorization path. They are explicit raises now, so the rule can be absolute and
+therefore checkable. Tests are excluded from that rule because pytest rewrites their assertions
+into explicit raises, which survive optimisation.
+
+Only the safety scenarios run optimized rather than the whole suite: the property being verified is
+that the safety checks survive, and a full second suite run for that would cost minutes on every
+push to prove nothing further.
+**Slice:** M0 backfill, found by auditing the build plan's Definition of Done

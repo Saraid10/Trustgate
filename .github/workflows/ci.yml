@@ -63,6 +63,12 @@ jobs:
       - name: Tests
         run: pytest -q
 
+      - name: Optimized-mode safety scenarios
+        # python -O strips assertions. The scenario harness raises ScenarioViolation explicitly so
+        # its checks survive that; this is what proves it, and it caught the alternative when the
+        # harness's raises were temporarily replaced with asserts.
+        run: python -O -m pytest tests/test_scenario_harness.py tests/test_scenarios_tier_a.py -q
+
       - name: Mutation suite
         # Breaks each safety invariant on purpose and requires its guarding tests to fail. A
         # green suite that would stay green with the guards removed is the failure this catches.

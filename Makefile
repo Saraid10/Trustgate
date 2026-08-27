@@ -1,4 +1,4 @@
-.PHONY: check-slice-1 check-slice-2 check-slice-3 scenario-tier-a verify-migrations mutation verify
+.PHONY: check-slice-1 check-slice-2 check-slice-3 scenario-tier-a verify-migrations mutation verify verify-optimized
 
 check-slice-1:
 	ruff check .
@@ -21,6 +21,7 @@ verify-migrations:
 # Breaks each safety invariant on purpose and requires its guarding tests to fail.
 mutation:
 	python -m scenarios.mutation
+	$(MAKE) verify-optimized
 
 # The full local gate, in the order CI runs it. Each step is its own recipe line, so make stops on
 # the first non-zero exit rather than reporting the last one.
@@ -35,3 +36,12 @@ verify:
 	python -m alembic check
 	python -m pytest -q
 	python -m scenarios.mutation
+
+# Runs the safety scenarios with assertions stripped.
+#
+# `python -O` removes assert statements at compile time. A harness that enforced its checks with
+# assert would report every scenario as passing while verifying nothing, which is why
+# ScenarioViolation is raised explicitly. That reasoning was untested until this target existed:
+# replacing the harness's raises with asserts makes this run print DID NOT RAISE on every case.
+verify-optimized:
+	python -O -m pytest tests/test_scenario_harness.py tests/test_scenarios_tier_a.py -q

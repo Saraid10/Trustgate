@@ -101,7 +101,12 @@ async def _post(
             detail = response.text
         raise CheckoutUnavailableError(f"{step} was refused: {detail}")
     body = response.json()
-    assert isinstance(body, dict)
+    if not isinstance(body, dict):
+        # An explicit check rather than an assert: `python -O` strips assertions, and a narrowing
+        # that vanishes under optimisation turns a clear error into a confusing one further down.
+        raise CheckoutUnavailableError(
+            f"the server returned {type(body).__name__} where an object was expected"
+        )
     return body
 
 
