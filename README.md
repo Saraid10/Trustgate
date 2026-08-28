@@ -1,14 +1,23 @@
 # TrustGate
 
-TrustGate is a synthetic-data, Razorpay Test Mode demonstration of an AI buyer that can propose a
-catalog purchase without gaining authority to rewrite the merchant, amount, currency, approval, or
-provider outcome. The agent proposes; TrustGate independently authorizes and records evidence.
+TrustGate is a synthetic-data, Razorpay Test Mode testbed for bounded agent spending. An AI buyer
+proposes a catalog purchase and never gains authority to rewrite the merchant, amount, currency,
+approval, or provider outcome. The agent proposes; TrustGate independently authorizes and records
+evidence.
+
+The part worth looking at is not that it refuses things. It is that the refusals are **verified
+rather than asserted**. Every safety invariant in this repository is deleted on purpose, one at a
+time, and a test has to fail. That is how an unguarded policy-expiry check was found here after two
+clean audits: 302 tests passed with the check removed.
 
 ## What It Proves
 
 - Catalog SKU and quantity are the only purchase facts an agent can influence.
 - Tenant-scoped policy, human approval, a one-time checkout authority, and verified provider events
   bound every payment action.
+- Authority delegated onward narrows at every hop, and the hops below a node cannot, between them,
+  promise more than that node holds.
+- Revoking one hop ends every branch below it without touching a descendant or recalling anything.
 - Unsafe attempts are rejected before a provider order can be created and leave an auditable trace.
 
 ## How AI Is Used Here
@@ -103,7 +112,38 @@ The read-only console at `/console/{tenant_id}` shows all of it in three columns
 proposed, what the server derived, and what the provider actually did. It cannot authorize,
 approve, or create anything.
 
+```bash
+python -m agent.delegate
+```
+
+**Delegation.** Four hops, narrowing at each. A leaf spends inside every bound above it, is refused
+a SKU outside the scope it was narrowed to, and a sibling is refused budget its parent had already
+promised away. Then one hop is revoked and the branch below it dies untouched.
+
 [`demo/script.md`](demo/script.md) is the rehearsed path with timings and what to say at each beat.
+
+## Delegated Authority, and Why a Budget Is Not a Capability
+
+Attenuating a capability is set intersection. A child permitted no more than its parent cannot
+widen the chain however deep it runs, because sets intersect - which is what the delegation
+literature, the macaroon family, and the IETF attenuating-token draft all mean by attenuation.
+
+Money is not a set. Two children each granted exactly their parent's budget satisfy every per-edge
+comparison and hold twice the parent's budget between them. Budgets add where sets intersect.
+
+TrustGate therefore **partitions** a parent's budget rather than comparing against it. What a node
+has promised downward is claimed by conditional update, and the parent's own row carries a check
+constraint that refuses the sum - so the invariant survives every line of the application being
+wrong. `python -m agent.delegate` walks four hops and shows the sibling being refused.
+
+The mutation named `delegation-aggregate-partition` is the evidence that this is a real distinction
+and not a stylistic one: delete the aggregate claim and every other delegation test still passes.
+
+A second property falls out of the same design. A hop carries no signature; its authority is
+re-derived from its whole chain, against live policy, every time it is spent. Revoking any link is
+already the end of the branch - no recall, no revocation list, and the descendant is never written
+to. The capability-token designs make the opposite trade, buying offline verification and giving up
+recall. `docs/limitations.md` states what that costs here.
 
 ## Attack Matrix
 

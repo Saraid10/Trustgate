@@ -115,6 +115,33 @@ because it is the right shape for delegated spending authority, not because a re
 
 ---
 
+### Delegation chains - noticed by the standards bodies, unsolved for budgets
+
+**Evidence: primary for the specifications, and this project's own result for the gap.** The IETF
+OAuth working group has a draft on attenuating authorization tokens for agentic delegation chains.
+The Decentralized Identity Foundation has an open item on scoped delegation chains with enforced
+authority narrowing across multi-hop workflows. Macaroons date to 2014, with Biscuit and UCAN
+after them.
+
+So the problem is not unnoticed, and this page should not pretend otherwise. What is missing is
+deployment: none of these has reached mainstream adoption, and none is running inside a payment
+authority.
+
+Underneath that there is a narrower gap, and it belongs to payments rather than to identity.
+Attenuation is defined over capabilities as sets, where a child no wider than its parent can never
+widen the chain because sets intersect. A budget is a quantity, and quantities add. Two children
+each granted exactly their parent's budget satisfy every per-edge comparison in every one of those
+designs and hold twice the parent's budget between them.
+
+TrustGate partitions the budget instead: what a node has promised downward is subtracted from what
+it holds, claimed atomically, and backed by a check constraint on the parent's own row. The
+mutation named `delegation-aggregate-partition` is the evidence that per-edge narrowing does not
+imply it - with the aggregate claim deleted, every other delegation test still passes.
+
+This is a result from one project's testbed, not a published finding, and it is stated that way.
+What it is not is a claim to have solved delegation. There is no agent identity here and no
+cross-tenant chain, which are the two hardest parts, and `docs/limitations.md` names both.
+
 ## What this project is claiming
 
 - The money-critical facts of a purchase can be made structurally unreachable by an agent, rather

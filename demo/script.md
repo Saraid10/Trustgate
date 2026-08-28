@@ -1,6 +1,6 @@
 # Demo script
 
-Five minutes, four beats, one browser tab and one terminal. Everything is synthetic.
+Six minutes, five beats, one browser tab and one terminal. Everything is synthetic.
 
 The order is deliberate: the problem is shown before the fix, because three clean refusals prove a
 system works and are weak at showing why anyone needs it.
@@ -194,7 +194,40 @@ Two mechanisms only. Resist explaining everything.
 
 ---
 
-## Beat 5 · What is proven, and what is not (4:15 – 5:00)
+## Beat 5 · Delegation narrows, and revocation cascades (4:15 – 5:15)
+
+```bash
+python -m agent.delegate
+```
+
+Roughly 60 seconds. Say, while the tree prints:
+
+> A human gives one agent a budget. That agent gives part of it to another, which gives part of that
+> to a third. Every hop is narrower than the one above it.
+
+When the sibling is refused:
+
+> This is the part the standards do not cover yet. Attenuation is defined over capabilities as sets,
+> and a child no wider than its parent can never widen the chain. But money is not a set. Two
+> children each granted exactly the parent's budget pass every per-edge check and hold twice what
+> the parent had between them. So the budget is partitioned, not compared - and the check constraint
+> that refuses it is on the parent's row, not in the code.
+
+When the revoked hop kills the leaf:
+
+> Nothing was sent to that agent. It was never written to. Its authority is re-derived from its
+> whole chain every time it spends, so cutting a link above it is already the end of the branch.
+> A signed token would have had to be hunted down and recalled - which is why revocation is on the
+> open-problems list for that whole family of designs.
+
+Do not claim this solves multi-agent delegation. It does not: there is no agent identity here, and
+no cross-tenant chain. `docs/limitations.md` says so and so should you.
+
+---
+
+---
+
+## Beat 6 · What is proven, and what is not (5:15 – 6:00)
 
 ```bash
 make mutation
@@ -212,6 +245,7 @@ Close on the limits, deliberately:
 > Test Mode only, synthetic data, header-based tenant identity that is not production
 > authentication, and receipts that are traceable but not yet tamper-evident.
 > `docs/limitations.md` names every cut.
+
 
 ---
 
