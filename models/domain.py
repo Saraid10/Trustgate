@@ -20,7 +20,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -135,6 +135,86 @@ class PolicyMerchant(Base):
     tenant_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     policy_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     merchant_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+
+
+class Delegation(Base):
+    """One hop of spending authority, bounded strictly inside the hop above it.
+
+    Attenuating a *permission* is set intersection: a child permitted no more than its parent
+    cannot widen the chain however deep it runs. Money is not a set. Two children each capped at
+    the parent's own limit spend twice the parent's budget between them, and every per-edge
+    comparison passes while it happens, because the delegation literature models capabilities as
+    sets and sets intersect where budgets add.
+
+    A parent's budget is therefore partitioned here rather than compared against. `allocated_minor`
+    is what this node has promised downward, `spent_minor` is what it has spent itself, and
+    `ck_delegation_budget_partitioned` refuses their sum passing `budget_minor` whatever the
+    application believes. `delegation.grant` claims an allocation with a conditional update; this
+    constraint is what holds when that claim is wrong.
+
+    Per-edge narrowing - budget, per-payment cap, expiry, and the SKUs a purpose covers - is
+    enforced by the `delegation_attenuates` trigger, so a row that widens its parent cannot be
+    written even by code that never consults the parent.
+    """
+
+    __tablename__ = "delegation"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_delegation_tenant"),
+        ForeignKeyConstraint(
+            ["tenant_id", "parent_id"],
+            ["delegation.tenant_id", "delegation.id"],
+            name="fk_delegation_parent_tenant",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "policy_id"],
+            ["spending_policy.tenant_id", "spending_policy.id"],
+            name="fk_delegation_policy_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("depth >= 0", name="ck_delegation_depth_nonnegative"),
+        CheckConstraint("depth <= 8", name="ck_delegation_depth_bounded"),
+        CheckConstraint(
+            "(parent_id IS NULL) = (depth = 0)", name="ck_delegation_root_is_the_only_orphan"
+        ),
+        CheckConstraint("budget_minor >= 0", name="ck_delegation_budget_nonnegative"),
+        CheckConstraint("allocated_minor >= 0", name="ck_delegation_allocated_nonnegative"),
+        CheckConstraint("spent_minor >= 0", name="ck_delegation_spent_nonnegative"),
+        CheckConstraint(
+            "allocated_minor + spent_minor <= budget_minor",
+            name="ck_delegation_budget_partitioned",
+        ),
+        CheckConstraint("max_amount_minor >= 0", name="ck_delegation_max_amount_nonnegative"),
+        CheckConstraint("expires_at > created_at", name="ck_delegation_expiry_after_creation"),
+        CheckConstraint(
+            "revoked_at IS NULL OR revoked_at >= created_at",
+            name="ck_delegation_revocation_after_creation",
+        ),
+        CheckConstraint("cardinality(allowed_skus) > 0", name="ck_delegation_scope_is_not_empty"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenant.id", ondelete="RESTRICT"), nullable=False
+    )
+    parent_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    policy_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    root_actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    delegator_actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    delegate_actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    budget_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    allocated_minor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    spent_minor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    allowed_skus: Mapped[list[str]] = mapped_column(ARRAY(String(64)), nullable=False)
+    purpose: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 class PaymentRequest(Base):

@@ -5,8 +5,9 @@ it keeps scratch files and notebooks out of the strict run. It also fails silent
 that matters: a package added later is not checked, nothing reports an error, and the gate goes on
 saying "Success" about code it never opened.
 
-That is how `demo` arrived unchecked: shipped code sitting outside a strict type-checker while
-the gate reported success, and nothing anywhere would have said so.
+That is how `demo` arrived unchecked, and how `delegation` would have arrived after it: shipped
+code sitting outside a strict type-checker while the gate reported success, and nothing anywhere
+would have said so.
 """
 
 from __future__ import annotations

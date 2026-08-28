@@ -1,0 +1,259 @@
+"""Grant, resolve, revoke, and spend against multi-hop delegated authority.
+
+The delegation literature models a capability as a set and attenuation as intersection, which is
+right for permissions and wrong for money. Two children each permitted no more than their parent
+satisfy every per-edge comparison and together spend twice what the parent held. Budgets add where
+sets intersect, so a parent's budget is partitioned here: `allocated_minor` records what has been
+promised downward and is claimed by conditional update, exactly as a daily spend reservation is.
+
+Nothing in this module is trusted to be the only guard. `ck_delegation_budget_partitioned` refuses
+an over-allocated parent row, and the `delegation_attenuates` trigger refuses a child wider than
+its parent, so both survive every line here being wrong.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.domain import Delegation, SpendingPolicy
+
+MAX_DEPTH = 8
+"""Mirrors `ck_delegation_depth_bounded`. A chain nobody can enumerate is a chain nobody audits."""
+
+
+class DelegationRefused(Exception):
+    """A delegation was refused, carrying the machine-readable reason it was refused for."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class Bounds:
+    """What a hop may do. Every field narrows or the trigger rejects the row."""
+
+    budget_minor: int
+    max_amount_minor: int
+    allowed_skus: tuple[str, ...]
+    purpose: str
+    expires_at: datetime
+
+
+async def grant_root(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    policy: SpendingPolicy,
+    principal_actor_id: str,
+    delegate_actor_id: str,
+    bounds: Bounds,
+) -> Delegation:
+    """Cut the first hop directly from a policy, on behalf of the human principal.
+
+    A root cannot exceed the policy it is cut from; below it the trigger takes over.
+    """
+
+    if bounds.budget_minor > policy.max_daily_spend_minor:
+        raise DelegationRefused("DELEGATION_EXCEEDS_POLICY_DAILY_LIMIT")
+    if bounds.max_amount_minor > policy.max_amount_minor:
+        raise DelegationRefused("DELEGATION_EXCEEDS_POLICY_PAYMENT_LIMIT")
+    if bounds.expires_at > policy.expiry:
+        raise DelegationRefused("DELEGATION_OUTLIVES_POLICY")
+
+    root = Delegation(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        parent_id=None,
+        depth=0,
+        policy_id=policy.id,
+        policy_version=policy.version,
+        root_actor_id=principal_actor_id,
+        delegator_actor_id=principal_actor_id,
+        delegate_actor_id=delegate_actor_id,
+        budget_minor=bounds.budget_minor,
+        allocated_minor=0,
+        spent_minor=0,
+        max_amount_minor=bounds.max_amount_minor,
+        allowed_skus=list(bounds.allowed_skus),
+        purpose=bounds.purpose,
+        expires_at=bounds.expires_at,
+    )
+    session.add(root)
+    await session.flush()
+    return root
+
+
+async def grant(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    parent_id: UUID,
+    delegator_actor_id: str,
+    delegate_actor_id: str,
+    bounds: Bounds,
+) -> Delegation:
+    """Delegate part of an existing hop onward.
+
+    The parent's allocation is claimed before the child exists. Two siblings racing for the same
+    remaining budget both issue this update, and only one of them can find the room.
+    """
+
+    parent = await session.scalar(
+        select(Delegation).where(Delegation.tenant_id == tenant_id, Delegation.id == parent_id)
+    )
+    if parent is None:
+        raise DelegationRefused("DELEGATION_PARENT_NOT_FOUND")
+    if parent.depth + 1 > MAX_DEPTH:
+        raise DelegationRefused("DELEGATION_DEPTH_EXCEEDED")
+
+    claimed = await session.execute(
+        update(Delegation)
+        .where(
+            Delegation.tenant_id == tenant_id,
+            Delegation.id == parent_id,
+            Delegation.revoked_at.is_(None),
+            Delegation.allocated_minor + Delegation.spent_minor + bounds.budget_minor
+            <= Delegation.budget_minor,
+        )
+        .values(allocated_minor=Delegation.allocated_minor + bounds.budget_minor)
+    )
+    if int(getattr(claimed, "rowcount", 0)) != 1:
+        raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED")
+
+    child = Delegation(
+        id=uuid4(),
+        tenant_id=tenant_id,
+        parent_id=parent_id,
+        depth=parent.depth + 1,
+        policy_id=parent.policy_id,
+        policy_version=parent.policy_version,
+        root_actor_id=parent.root_actor_id,
+        delegator_actor_id=delegator_actor_id,
+        delegate_actor_id=delegate_actor_id,
+        budget_minor=bounds.budget_minor,
+        allocated_minor=0,
+        spent_minor=0,
+        max_amount_minor=bounds.max_amount_minor,
+        allowed_skus=list(bounds.allowed_skus),
+        purpose=bounds.purpose,
+        expires_at=bounds.expires_at,
+    )
+    session.add(child)
+    await session.flush()
+    return child
+
+
+async def resolve_chain(
+    session: AsyncSession, *, tenant_id: UUID, delegation_id: UUID
+) -> list[Delegation]:
+    """Walk from a hop to its root, returning the chain root-first.
+
+    A hop is only as good as everything above it, so the whole path is fetched in one statement
+    rather than trusting the leaf to describe its own ancestry.
+    """
+
+    leaf = (
+        select(Delegation)
+        .where(Delegation.tenant_id == tenant_id, Delegation.id == delegation_id)
+        .cte(name="chain", recursive=True)
+    )
+    parent = select(Delegation).join(
+        leaf,
+        (Delegation.tenant_id == leaf.c.tenant_id) & (Delegation.id == leaf.c.parent_id),
+    )
+    walk = leaf.union_all(parent)
+
+    rows = (await session.execute(select(Delegation).from_statement(select(walk)))).scalars().all()
+    chain = sorted(rows, key=lambda hop: hop.depth)
+    if not chain:
+        raise DelegationRefused("DELEGATION_NOT_FOUND")
+    if chain[0].depth != 0 or chain[0].parent_id is not None:
+        raise DelegationRefused("DELEGATION_CHAIN_BROKEN")
+    if len(chain) != chain[-1].depth + 1:
+        raise DelegationRefused("DELEGATION_CHAIN_BROKEN")
+    return chain
+
+
+async def revoke(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    delegation_id: UUID,
+    at: datetime | None = None,
+) -> None:
+    """Revoke one hop. Everything below it dies with it, without being touched.
+
+    Descendants are left alone deliberately. A signed capability has to be hunted down and recalled
+    because it carries its own authority; a hop here is re-derived from its whole chain every time
+    it is spent, so revoking an ancestor is already the end of the branch.
+    """
+
+    revoked = await session.execute(
+        update(Delegation)
+        .where(
+            Delegation.tenant_id == tenant_id,
+            Delegation.id == delegation_id,
+            Delegation.revoked_at.is_(None),
+        )
+        .values(revoked_at=at or datetime.now(UTC))
+    )
+    if int(getattr(revoked, "rowcount", 0)) != 1:
+        raise DelegationRefused("DELEGATION_ALREADY_REVOKED")
+
+
+async def spend(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    delegation_id: UUID,
+    amount_minor: int,
+    sku: str,
+    as_of: datetime | None = None,
+) -> None:
+    """Spend against a hop, after every hop above it has agreed.
+
+    Raises rather than returning a flag: a refusal here has a reason, and a caller that ignores a
+    boolean spends money it was told it could not.
+    """
+
+    now = as_of or datetime.now(UTC)
+    chain = await resolve_chain(session, tenant_id=tenant_id, delegation_id=delegation_id)
+
+    current = await session.scalar(
+        select(SpendingPolicy).where(
+            SpendingPolicy.tenant_id == tenant_id,
+            SpendingPolicy.version == chain[0].policy_version,
+        )
+    )
+    if current is None or current.expiry <= now:
+        raise DelegationRefused("DELEGATION_POLICY_DRIFT")
+
+    for hop in chain:
+        if hop.revoked_at is not None:
+            raise DelegationRefused("DELEGATION_REVOKED")
+        if hop.expires_at <= now:
+            raise DelegationRefused("DELEGATION_EXPIRED")
+        if amount_minor > hop.max_amount_minor:
+            raise DelegationRefused("DELEGATION_AMOUNT_EXCEEDS_HOP_LIMIT")
+        if sku not in hop.allowed_skus:
+            raise DelegationRefused("DELEGATION_SKU_OUT_OF_SCOPE")
+
+    claimed = await session.execute(
+        update(Delegation)
+        .where(
+            Delegation.tenant_id == tenant_id,
+            Delegation.id == delegation_id,
+            Delegation.revoked_at.is_(None),
+            Delegation.allocated_minor + Delegation.spent_minor + amount_minor
+            <= Delegation.budget_minor,
+        )
+        .values(spent_minor=Delegation.spent_minor + amount_minor)
+    )
+    if int(getattr(claimed, "rowcount", 0)) != 1:
+        raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED")
