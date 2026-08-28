@@ -140,6 +140,11 @@ TrustGate uses only synthetic tenants, merchants, and INR prices. It is a local 
 a payment processor, compliance product, legal-consent system, fraud model, or Live Mode payment
 integration.
 
+[`docs/positioning.md`](docs/positioning.md) explains why a project like this is worth building
+now, with each item of Indian payments context labelled by the evidence behind it — an NPCI
+circular is cited as a circular, a press report as a press report, and a recommendation as a
+recommendation. It claims no compliance with any of them.
+
 [`docs/limitations.md`](docs/limitations.md) names every deliberate cut, including the unflattering
 ones: tenant identity is a header and not authentication, one webhook secret serves all tenants,
 receipts are traceable but not tamper-evident, and there is no rate limiting anywhere. A limitation

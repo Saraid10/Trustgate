@@ -1097,3 +1097,32 @@ enumerating the branches of a safety check and asking which of them anything act
 which is the same question the mutation suite exists to ask, applied by hand to a function whose
 conditions had never been listed out.
 **Slice:** Second full-repository audit
+
+## 2026-08-27: Regulatory Context Is Labelled by the Evidence Behind It
+**Decision:** `docs/positioning.md` states each Indian payments item with what kind of evidence
+supports it - a primary NPCI circular, press reporting only, or a recommendation in a government
+report - and claims conformance with none of them.
+**Alternatives considered:** Write the parallels without labels, as the build plan's draft did;
+omit the regulatory context entirely.
+**Rationale:** The build plan flagged these items as coming from press coverage and required either
+primary sources or an explicit "reported" marking. Searching separated them, and they turned out to
+have genuinely different standing:
+
+UPI Circle has an NPCI circular, `UPI-OC-No-201-FY-24-25`, and an addendum. It is a shipped,
+documented delegation primitive whose shape - a principal granting bounded spending authority to a
+delegate, enforced centrally - is the same one this project implements. That is the strongest item
+on the page because it is the only one that already exists.
+
+The Unified Agent Protocol is press reporting. No NPCI circular, specification, or press release
+was found. The page says so in those words, because the people most likely to read this project are
+the people most likely to know.
+
+The human-in-the-loop threshold is a recommendation in CERT-In's Digital Threat Report 2025-26,
+reported by press, with no threshold named. It resembles `approval_required_above_minor` closely,
+and the page says the resemblance is structural rather than conformance.
+
+A test enforces the labels and forbids conformance verbs near any named body. Its first version
+flagged any sentence mentioning a regulator at all, which caught the page's own sourced
+descriptions - a check that would have pushed the writing toward vagueness rather than accuracy.
+The failure mode worth catching is a verb, not proximity.
+**Slice:** E - M7 positioning
