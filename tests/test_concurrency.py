@@ -196,6 +196,16 @@ async def _race(
     return list(await asyncio.gather(worker(), worker()))
 
 
+_RACE_DAY = datetime(2026, 1, 15, 12, 0, tzinfo=UTC)
+"""Pin the reservation day so both racers agree on which bucket they are competing for.
+
+Each caller derives its own spend_date from the wall clock, so two racers straddling UTC midnight
+write different rows, never conflict, and both succeed. That is correct in production - the day
+really did roll over, and a fresh daily budget is the point of a daily budget - but it makes this
+test depend on what time it runs.
+"""
+
+
 @pytest.mark.asyncio
 async def test_daily_spend_reservation_race_allows_only_one_final_reservation() -> None:
     engine = create_async_engine(DATABASE_URL)
@@ -210,6 +220,7 @@ async def test_daily_spend_reservation_race_allows_only_one_final_reservation() 
                 actor_id="race-actor",
                 amount_minor=60,
                 policy_version=1,
+                as_of=_RACE_DAY,
             ),
         )
         async with sessions() as session:
@@ -219,6 +230,8 @@ async def test_daily_spend_reservation_race_allows_only_one_final_reservation() 
                 )
             )
 
+        raised = [result for result in results if isinstance(result, Exception)]
+        assert not raised, _describe(results)
         assert results.count(True) == 1, _describe(results)
         assert results.count(False) == 1, _describe(results)
         assert reserved == 60

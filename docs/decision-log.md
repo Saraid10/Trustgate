@@ -1153,3 +1153,28 @@ No mutations were added for the seven already-caught branches. A mutation earns 
 guarding something a test would otherwise miss, and eighteen entries that each say something
 distinct are worth more than twenty-seven where nine restate what the suite already proves.
 **Slice:** Third full-repository audit
+
+## 2026-08-28: The Intermittent Race Test Was Reading the Clock Twice
+**Decision:** Pin the reservation day in
+`test_daily_spend_reservation_race_allows_only_one_final_reservation`, and assert explicitly that
+neither racer raised.
+**Alternatives considered:** Keep hunting a failure that would not reproduce; mark the test flaky
+and move on; change how production derives the spend day.
+**Rationale:** The test failed roughly one run in twenty and four hypotheses had already been
+falsified. Thirty-eight consecutive clean runs said more hunting was not going to find it, so the
+code was read instead of run.
+
+Each racer derives its own `spend_date` from the wall clock. Two racers straddling UTC midnight
+land in different day buckets, never contend, and both reserve against a limit meant to admit one.
+
+Production is left alone. Two requests either side of midnight each getting a fresh daily budget is
+what a daily budget means, and the boundary of a day-bucketed limit is inherently fuzzy by however
+long it takes to read a clock. Only the test needed to stop depending on what time it runs.
+
+The second assertion change matters as much. `results.count(False) == 1` could not distinguish a
+racer returning False from a racer raising, so a dropped connection under memory pressure would
+have reported a count mismatch rather than the exception that caused it. It now names the exception.
+
+Verified by deleting the daily-limit guard from the conditional upsert: the test still fails, so
+pinning the day removed nondeterminism without removing what the test proves.
+**Slice:** Third full-repository audit
