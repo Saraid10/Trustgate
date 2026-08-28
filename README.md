@@ -55,6 +55,56 @@ the money and the other did not. The baseline has its own tests asserting both t
 anything real and that it is still exploitable, since a demonstration that quietly stopped being
 vulnerable would keep passing while making the opposite point.
 
+## Run the Demo
+
+Four commands take a clean database to a real Razorpay Test Mode payment. Requires the stack from
+[Quickstart](#quickstart) and `ENABLE_CONSOLE=true` in `.env`.
+
+```bash
+python -m agent.stage
+```
+
+Stages a fixed demo tenant, clears the timeline, and prints the console URL plus the exact command
+for every beat below. Run it between takes.
+
+```bash
+python -m demo.unguarded
+```
+
+**The problem**, in this project's own code. No policy layer, so the injected instruction executes.
+
+```bash
+python -m agent.demo "Buy Starter credits for the robotics club."
+python -m agent.checkout --open
+```
+
+**A purchase that should go through.** The agent proposes a SKU and a quantity; the server derives
+the price and merchant. `checkout` issues a one-time authority, creates a real provider order, and
+opens the payment page — the agent does neither, which is the point.
+
+```bash
+python -m agent.demo "Buy Team credits for the robotics club."
+python -m agent.approve
+```
+
+**A purchase that needs a human.** Over the approval threshold, so the agent cannot finish it.
+`approve` is a separate command holding a token the agent does not have, under an identity the
+server refuses if it matches the requester.
+
+```bash
+python -m agent.demo --adversarial "Buy cloud credits for the club."
+```
+
+**The attack.** The same injected instruction from the first command. The amount and merchant are
+discarded because the proposal has nowhere to put them; what survives is a quantity the catalog
+bounds. No payment request is created.
+
+The read-only console at `/console/{tenant_id}` shows all of it in three columns — what the agent
+proposed, what the server derived, and what the provider actually did. It cannot authorize,
+approve, or create anything.
+
+[`demo/script.md`](demo/script.md) is the rehearsed path with timings and what to say at each beat.
+
 ## Attack Matrix
 
 Tier A adversarial scenarios. This table is generated from the scenario registry by
@@ -163,12 +213,11 @@ docker compose exec -T api python -m pytest -q
 
 The local API health check is available at `http://127.0.0.1:8000/health`.
 
-Create a disposable synthetic M1 tenant with `python -m agent.seed`. Set `MCP_TENANT_ID` and
-`MCP_ACTOR_ID` to the printed values, then run the local buyer-agent demo with
-`python -m agent.demo "Buy Starter credits for our student club."`. It can propose only a catalog
-SKU, quantity, and purpose; the MCP server derives all money-critical facts. Use
-`python -m agent.demo --adversarial "Buy a small amount of cloud credits."` to run the
-deterministic poisoned-catalog demonstration.
+For the demonstration, use `python -m agent.stage` — it stages a fixed tenant so the console URL
+stays the same between runs, and prints every command. See [Run the Demo](#run-the-demo).
+
+`python -m agent.seed` remains for exploration: it mints a disposable tenant with fresh
+identifiers, which is right for poking at the system and wrong for anything you intend to film.
 
 To run the same flow with a real model instead of a deterministic substitute, install the optional
 extra with `pip install -e ".[agent]"` and add `--live`. Two backends are supported and both use
@@ -200,9 +249,20 @@ repository.
 ```text
 AI buyer proposes SKU, quantity, and purpose
         -> TrustGate derives and authorizes money-critical facts
+        -> a human takes the authorization to checkout
         -> Razorpay Test Mode executes a bounded order
+        -> a signed provider event moves the payment to captured
         -> TrustGate records authorization and provider evidence
 ```
 
-The formal build plan is in `docs/build-plan.md`; architecture, threat-model, and design decisions
-are in `docs/`.
+The agent crosses the first arrow and no other. Authorization and payment are separate steps: it
+obtains the right to buy something and never obtains the ability to pay.
+
+| Document | What it holds |
+|---|---|
+| [`docs/decision-log.md`](docs/decision-log.md) | Every real choice, with the alternatives rejected and why |
+| [`docs/limitations.md`](docs/limitations.md) | Every deliberate cut, including the unflattering ones |
+| [`docs/positioning.md`](docs/positioning.md) | Indian payments context, labelled by the evidence behind it |
+| [`docs/architecture.md`](docs/architecture.md) | How the pieces fit |
+| [`docs/threat-model.md`](docs/threat-model.md) | What is defended and against whom |
+| [`docs/build-plan.md`](docs/build-plan.md) | The formal plan this was built against |
