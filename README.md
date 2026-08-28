@@ -176,6 +176,12 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `receipt-search-fail-closed` | An incomplete provider search never reports a receipt as absent. |
 | `policy-expiry-denies-spending` | An expired policy cannot authorize new spending. |
 | `missing-policy-fails-closed` | A tenant with no policy is denied rather than allowed by default. |
+| `delegation-aggregate-partition` | Sibling delegations cannot together promise more than their parent holds. |
+| `delegation-spend-against-allocation` | A hop cannot spend budget it has already promised to the hops below it. |
+| `delegation-chain-revocation` | Revoking one hop stops every hop below it. |
+| `delegation-chain-payment-cap` | A spend is bound by the narrowest per-payment cap anywhere above it. |
+| `delegation-scope-narrowing` | A purpose narrowed at one hop stays narrowed at every hop below it. |
+| `delegation-hop-expiry` | An expired hop stops the branch below it. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

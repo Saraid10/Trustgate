@@ -17,6 +17,7 @@ from api.routes.checkout_authorities import (
     consume_checkout_authority,
     issue_checkout_authority,
 )
+from delegation.chain import MAX_DEPTH, Bounds, DelegationRefused, grant, grant_root
 from models.domain import (
     Approval,
     AuditEvent,
@@ -24,6 +25,7 @@ from models.domain import (
     CatalogItem,
     CheckoutAuthority,
     DailySpendReservation,
+    Delegation,
     Merchant,
     Payment,
     PaymentRequest,
@@ -147,6 +149,14 @@ async def _cleanup(session_factory: async_sessionmaker[AsyncSession], tenant_id:
         Tenant,
     )
     async with session_factory() as session:
+        # Delegations point at their parent with RESTRICT, so a single bulk delete can reach a
+        # parent before its children. Deepest hop first is the only order that always works.
+        for depth in range(MAX_DEPTH, -1, -1):
+            await session.execute(
+                delete(Delegation).where(
+                    Delegation.tenant_id == tenant_id, Delegation.depth == depth
+                )
+            )
         await session.execute(
             text("ALTER TABLE spending_policy DISABLE TRIGGER spending_policy_immutable")
         )
@@ -558,6 +568,85 @@ async def test_a_second_caller_cannot_decide_from_state_the_lock_should_have_hid
 
         assert state == "AUTHORIZED"
         assert transitions == 1, f"the payment was transitioned {transitions} times"
+    finally:
+        await _cleanup(sessions, data.tenant_id)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sibling_delegation_race_grants_only_one_final_child() -> None:
+    """Two siblings reach for the last of a parent's budget and one of them must lose.
+
+    This is the concurrent face of the same distinction the delegation tests draw. Reading the
+    parent, checking room, and writing the allocation is correct in a single caller and wrong the
+    moment there are two: both read the same room and both believe they fit. The allocation is a
+    conditional update for the same reason a daily spend reservation is.
+    """
+
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    data = await _seed(sessions, state="AUTHORIZED")
+    try:
+        async with sessions() as session:
+            policy = await session.scalar(
+                select(SpendingPolicy).where(SpendingPolicy.id == data.policy_id)
+            )
+            assert policy is not None
+            bounds = Bounds(
+                budget_minor=100,
+                max_amount_minor=100,
+                allowed_skus=("CLOUD-STARTER",),
+                purpose="race",
+                expires_at=policy.expiry,
+            )
+            root = await grant_root(
+                session,
+                tenant_id=data.tenant_id,
+                policy=policy,
+                principal_actor_id="race-principal",
+                delegate_actor_id="race-agent",
+                bounds=bounds,
+            )
+            root_id = root.id
+            child_bounds = Bounds(
+                budget_minor=60,
+                max_amount_minor=100,
+                allowed_skus=("CLOUD-STARTER",),
+                purpose="race",
+                expires_at=policy.expiry,
+            )
+            await session.commit()
+
+        async def take_the_budget(session: AsyncSession) -> object:
+            try:
+                await grant(
+                    session,
+                    tenant_id=data.tenant_id,
+                    parent_id=root_id,
+                    delegator_actor_id="race-agent",
+                    delegate_actor_id=f"race-sub-{uuid4().hex[:8]}",
+                    bounds=child_bounds,
+                )
+            except DelegationRefused as refused:
+                return refused.reason
+            return True
+
+        results = await _race(sessions, take_the_budget)
+
+        raised = [result for result in results if isinstance(result, Exception)]
+        assert not raised, _describe(results)
+        assert results.count(True) == 1, _describe(results)
+        assert results.count("DELEGATION_BUDGET_EXHAUSTED") == 1, _describe(results)
+
+        async with sessions() as session:
+            allocated = await session.scalar(
+                select(Delegation.allocated_minor).where(Delegation.id == root_id)
+            )
+            children = await session.scalar(
+                select(func.count()).select_from(Delegation).where(Delegation.parent_id == root_id)
+            )
+        assert allocated == 60
+        assert children == 1
     finally:
         await _cleanup(sessions, data.tenant_id)
         await engine.dispose()

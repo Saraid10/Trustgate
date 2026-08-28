@@ -22,6 +22,7 @@ SEARCHED_PACKAGES = (
     "agent",
     "demo",
     "mcp_server",
+    "delegation",
     "mock_provider",
     "models",
     "policy_engine",

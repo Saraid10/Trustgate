@@ -268,6 +268,85 @@ MUTATIONS: tuple[Mutation, ...] = (
             "tests/test_policy_engine.py::test_policy_without_a_tenant_configuration_fails_closed",
         ),
     ),
+    Mutation(
+        name="delegation-aggregate-partition",
+        invariant="Sibling delegations cannot together promise more than their parent holds.",
+        path="delegation/chain.py",
+        original=(
+            "            Delegation.allocated_minor + Delegation.spent_minor "
+            "+ bounds.budget_minor\n"
+            "            <= Delegation.budget_minor,\n"
+        ),
+        mutated="            Delegation.budget_minor >= bounds.budget_minor,\n",
+        guarding_tests=(
+            "tests/test_delegation.py::test_two_children_cannot_together_outspend_their_parent",
+        ),
+    ),
+    Mutation(
+        name="delegation-spend-against-allocation",
+        invariant="A hop cannot spend budget it has already promised to the hops below it.",
+        path="delegation/chain.py",
+        original=(
+            "            Delegation.allocated_minor + Delegation.spent_minor + amount_minor\n"
+            "            <= Delegation.budget_minor,\n"
+        ),
+        mutated="            Delegation.spent_minor + amount_minor <= Delegation.budget_minor,\n",
+        guarding_tests=(
+            "tests/test_delegation.py"
+            "::test_a_node_cannot_spend_what_it_has_already_promised_downward",
+        ),
+    ),
+    Mutation(
+        name="delegation-chain-revocation",
+        invariant="Revoking one hop stops every hop below it.",
+        path="delegation/chain.py",
+        original=(
+            "        if hop.revoked_at is not None:\n"
+            '            raise DelegationRefused("DELEGATION_REVOKED")\n'
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegation.py"
+            "::test_revoking_an_ancestor_stops_a_descendant_that_was_never_touched",
+        ),
+    ),
+    Mutation(
+        name="delegation-chain-payment-cap",
+        invariant="A spend is bound by the narrowest per-payment cap anywhere above it.",
+        path="delegation/chain.py",
+        original=(
+            "        if amount_minor > hop.max_amount_minor:\n"
+            '            raise DelegationRefused("DELEGATION_AMOUNT_EXCEEDS_HOP_LIMIT")\n'
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegation.py::test_a_hop_is_bound_by_the_narrowest_cap_above_it",
+        ),
+    ),
+    Mutation(
+        name="delegation-scope-narrowing",
+        invariant="A purpose narrowed at one hop stays narrowed at every hop below it.",
+        path="delegation/chain.py",
+        original=(
+            "        if sku not in hop.allowed_skus:\n"
+            '            raise DelegationRefused("DELEGATION_SKU_OUT_OF_SCOPE")\n'
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegation.py::test_a_purpose_narrowed_at_one_hop_stays_narrowed_below_it",
+        ),
+    ),
+    Mutation(
+        name="delegation-hop-expiry",
+        invariant="An expired hop stops the branch below it.",
+        path="delegation/chain.py",
+        original=(
+            "        if hop.expires_at <= now:\n"
+            '            raise DelegationRefused("DELEGATION_EXPIRED")\n'
+        ),
+        mutated="",
+        guarding_tests=("tests/test_delegation.py::test_an_expired_hop_stops_the_branch_below_it",),
+    ),
 )
 
 
