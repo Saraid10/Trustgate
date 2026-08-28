@@ -153,6 +153,30 @@ Old versions are never deleted. An authorization recorded under version 3 has to
 long after version 4 supersedes it, and the foreign keys enforce that as much as the intent does.
 Retention and usability are separate: a superseded policy stays readable forever and can authorize
 nothing.
+## Delegated authority
+
+Delegation is enforced, not signed, and that is a trade rather than an oversight.
+
+A hop carries no cryptographic proof of itself. Its authority is re-derived from the whole chain,
+against live policy, every time it is spent, which is what lets revoking one hop end every branch
+below it without touching a descendant or maintaining a revocation list. The cost is that a hop
+means nothing away from the system that issued it: it cannot be verified offline, handed to a third
+party, or checked by a merchant. The capability-token designs make the opposite trade, buying
+offline verification and giving up recall. Neither is free, and this project needed recall.
+
+What is not attempted:
+
+- **No cross-tenant or cross-system delegation.** A chain lives inside one tenant. Delegating to an
+  agent operated by someone else is the problem the IETF attenuating-token draft and the DIF
+  delegation-chain work exist for, and nothing here addresses it.
+- **No agent identity.** `delegate_actor_id` is a string the caller supplies. Nothing proves the
+  actor spending under a hop is the actor the hop was granted to. This is the same gap the identity
+  header has everywhere else in this project, and it is the largest one.
+- **Depth is bounded at 8 and the bound is arbitrary.** It exists so a chain stays enumerable and
+  auditable, not because eight is a meaningful number.
+- **A revoked hop is not garbage collected.** Rows stay for the audit trail, so a long-lived tenant
+  accumulates dead delegations with no retention policy.
+- **Budget is a single currency integer.** A chain cannot span currencies, and nothing converts.
 
 ## Deliberately deferred
 

@@ -1178,3 +1178,33 @@ have reported a count mismatch rather than the exception that caused it. It now 
 Verified by deleting the daily-limit guard from the conditional upsert: the test still fails, so
 pinning the day removed nondeterminism without removing what the test proves.
 **Slice:** Third full-repository audit
+
+
+## 2026-08-28: Delegation Partitions a Budget Instead of Intersecting a Capability
+**Decision:** Multi-hop delegated authority in which each hop narrows its parent on every
+dimension, and the budgets of the hops below a node are subtracted from it rather than compared
+against it.
+**Alternatives considered:** Per-edge narrowing alone, as the capability literature describes it;
+signed capability tokens in the manner of macaroons, Biscuit, or the IETF attenuating-token draft;
+leaving delegation out of scope.
+**Rationale:** Attenuation is defined over capabilities as sets, where a child no wider than its
+parent can never widen the chain because sets intersect. Money is not a set. Two children each
+granted exactly the parent's budget satisfy every per-edge comparison and hold twice the parent's
+budget between them. `ck_delegation_budget_partitioned` refuses the sum on the parent's own row,
+and `delegation.grant` claims the allocation with a conditional update so two siblings racing for
+the last of a budget cannot both find room.
+
+The mutation named `delegation-aggregate-partition` is the evidence that this is a real distinction
+rather than a stylistic one: with the aggregate claim deleted, every other delegation test still
+passes.
+
+Revocation cascades instead of propagating. A signed capability carries its own authority, so
+revoking it means recalling it - hence revocation sitting on the open-problems list for that whole
+family of designs. A hop here re-derives its authority from its entire chain on every spend, so
+cutting a link is already the end of the branch, and the test asserts the descendant stopped
+without its row ever being written to.
+
+The cost is stated in `docs/limitations.md` rather than hidden: a hop cannot be verified offline or
+away from this system. That is the mirror of what the token designs give up, and it was chosen
+knowingly.
+**Slice:** Delegation chains

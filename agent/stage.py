@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agent import demo_catalog as facts
 from agent.runtime import load_local_env, run_async
 from api.database import SessionLocal
+from delegation.chain import MAX_DEPTH
 from models.domain import (
     Approval,
     AuditEvent,
@@ -39,6 +40,7 @@ from models.domain import (
     CatalogItem,
     CheckoutAuthority,
     DailySpendReservation,
+    Delegation,
     Merchant,
     Payment,
     PaymentRequest,
@@ -124,6 +126,13 @@ async def reset_demo_tenant(session: AsyncSession) -> None:
 
     for model in _TRANSACTIONAL:
         await session.execute(delete(model).where(model.tenant_id == DEMO_TENANT_ID))
+    # Delegations point at their parent with RESTRICT, so the deepest hop has to go first.
+    for depth in range(MAX_DEPTH, -1, -1):
+        await session.execute(
+            delete(Delegation).where(
+                Delegation.tenant_id == DEMO_TENANT_ID, Delegation.depth == depth
+            )
+        )
 
 
 async def _ensure_configuration(session: AsyncSession) -> None:

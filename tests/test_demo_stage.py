@@ -17,9 +17,11 @@ from agent.stage import (
     reset_demo_tenant,
     stage_demo,
 )
+from delegation.chain import Bounds, grant, grant_root
 from models.domain import (
     AuditEvent,
     CatalogItem,
+    Delegation,
     PaymentRequest,
     PolicyMerchant,
     SpendingPolicy,
@@ -294,3 +296,53 @@ async def test_the_newest_policy_can_pay_the_merchant(async_session: AsyncSessio
         )
     )
     assert linked == 1, "the superseding policy allows no merchant"
+
+
+async def test_restaging_clears_delegations_from_the_previous_take(
+    async_session: AsyncSession,
+) -> None:
+    """A chain left over from the last run would be filmed alongside the new one."""
+
+    await stage_demo(async_session)
+    policy = await async_session.scalar(
+        select(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .order_by(SpendingPolicy.version.desc())
+    )
+    assert policy is not None
+    root = await grant_root(
+        async_session,
+        tenant_id=DEMO_TENANT_ID,
+        policy=policy,
+        principal_actor_id="stage-principal",
+        delegate_actor_id="stage-agent",
+        bounds=Bounds(
+            budget_minor=10_000,
+            max_amount_minor=10_000,
+            allowed_skus=("CLOUD-STARTER",),
+            purpose="left over from the last take",
+            expires_at=policy.expiry,
+        ),
+    )
+    await grant(
+        async_session,
+        tenant_id=DEMO_TENANT_ID,
+        parent_id=root.id,
+        delegator_actor_id="stage-agent",
+        delegate_actor_id="stage-sub-agent",
+        bounds=Bounds(
+            budget_minor=5_000,
+            max_amount_minor=5_000,
+            allowed_skus=("CLOUD-STARTER",),
+            purpose="left over from the last take",
+            expires_at=policy.expiry,
+        ),
+    )
+    await async_session.flush()
+
+    await reset_demo_tenant(async_session)
+
+    remaining = await async_session.scalar(
+        select(func.count()).select_from(Delegation).where(Delegation.tenant_id == DEMO_TENANT_ID)
+    )
+    assert remaining == 0, "a delegation chain survived the reset"
