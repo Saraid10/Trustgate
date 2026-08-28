@@ -76,7 +76,7 @@ python -m demo.unguarded
 **Do not say** "blocked", "detected", or "caught". Nothing was. Point at the second half of the
 output: the same instruction through TrustGate has nowhere to put an amount or a merchant.
 
-> The difference is not a filter that recognised an attack. One interface had a field for the
+> The difference is not a filter that recognized an attack. One interface had a field for the
 > money and the other did not.
 
 ---

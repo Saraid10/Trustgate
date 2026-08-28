@@ -1,7 +1,7 @@
 """Tests for the live buyer adapter and measured untrusted-content influence.
 
 These tests never contact a model provider. `ClaudeBuyer` is exercised through an injected fake
-client, so the parsing and prompt-construction behaviour is verified deterministically while the
+client, so the parsing and prompt-construction behavior is verified deterministically while the
 real provider path stays out of the regression suite.
 """
 

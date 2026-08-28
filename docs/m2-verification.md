@@ -29,7 +29,7 @@ nothing, which is the claim the project actually makes. A response assertion can
   requests, provider orders, and consumed authorities, and compares it across an attack.
 - The harness raises `ScenarioViolation` rather than using bare `assert`. It is shipped library
   code and `python -O` strips assertions; an assert-based harness reports every scenario as
-  passing under optimisation while verifying nothing. The same reasoning applied to the state
+  passing under optimization while verifying nothing. The same reasoning applied to the state
   machine's approval requirement in Slice 4.
 - `scenarios/tier_a/__init__.py` is the registry. `scenarios/report.py` renders the matrix.
 - `tests/test_scenario_harness.py` feeds the harness snapshots of a successful attack and requires
@@ -63,7 +63,7 @@ nothing, which is the claim the project actually makes. A response assertion can
 | `ruff check .` | Passed |
 | `ruff format --check .` | Passed, 81 files |
 | `mypy --strict` | Passed, 36 source files |
-| Harness under `python -O` | 8 passed; assertions survive optimisation |
+| Harness under `python -O` | 8 passed; assertions survive optimization |
 | README matrix drift test | Passed |
 
 No migration was added in this slice, so the migration round-trip gate is unchanged from M0.

@@ -303,7 +303,7 @@ and regenerate it by hand later.
 **Rationale:** A response assertion cannot distinguish "the request was refused" from "the request
 was refused and something was written anyway", which is the claim the project actually makes. The
 harness ships inside the `scenarios` package and `python -O` strips assertions, so an assert-based
-harness would report every scenario as passing under optimisation while verifying nothing; the
+harness would report every scenario as passing under optimization while verifying nothing; the
 same reasoning already applied to the state machine's approval requirement. A generated matrix
 cannot claim an attack that has no passing test, which a hand-written one silently can.
 **Slice:** M2 early attack proof
@@ -691,7 +691,7 @@ money moved and the system never learns. That failure is strictly worse than the
 bounds, because duplicate delivery is already refused exactly and permanently by the unique index
 on `provider_event_id`. The freshness window is therefore defence in depth over a dedupe that is
 already correct, and it is set generously on purpose. Copying a five-minute tolerance from a
-provider with different retry behaviour would have traded a real availability failure for a
+provider with different retry behavior would have traded a real availability failure for a
 marginal security gain. This project has not verified Razorpay's documented retry schedule, so the
 default is conservative and configurable rather than presented as tuned.
 
@@ -1060,7 +1060,7 @@ find a typo, and on a recording it would have been unrecoverable without restagi
 whole project; run the entire suite optimized rather than the safety scenarios.
 **Rationale:** `scenarios/tier_a/harness.py` opens by explaining that it raises `ScenarioViolation`
 rather than using `assert`, because `python -O` strips assertions and an assert-based harness would
-"report every scenario as passing under optimisation while verifying nothing". That reasoning is
+"report every scenario as passing under optimization while verifying nothing". That reasoning is
 correct, it is one of the better decisions in this project, and nothing had ever run under `-O` to
 confirm it. The build plan's own Definition of Done required exactly this and it was never done.
 
@@ -1072,7 +1072,7 @@ reason that the exception type changed.
 The two remaining asserts in shipped code were type narrowings after a JSON parse, in demo tooling
 rather than the authorization path. They are explicit raises now, so the rule can be absolute and
 therefore checkable. Tests are excluded from that rule because pytest rewrites their assertions
-into explicit raises, which survive optimisation.
+into explicit raises, which survive optimization.
 
 Only the safety scenarios run optimized rather than the whole suite: the property being verified is
 that the safety checks survive, and a full second suite run for that would cost minutes on every
@@ -1126,3 +1126,30 @@ flagged any sentence mentioning a regulator at all, which caught the page's own 
 descriptions - a check that would have pushed the writing toward vagueness rather than accuracy.
 The failure mode worth catching is a verb, not proximity.
 **Slice:** E - M7 positioning
+
+## 2026-08-28: Every Safety Branch Was Probed, Not Just the Enumerated Ones
+**Decision:** Nine conditions across the policy evaluator and approval consumption were deleted one
+at a time and the suite run against each. Seven were caught. The two that were not are a redundant
+pair guarding one property, and removing both together fails a test.
+**Alternatives considered:** Trust the mutation suite's eighteen entries; add mutations for all
+nine regardless.
+**Rationale:** The mutation suite guards invariants somebody thought to enumerate, so anything
+never enumerated is invisible to it. That is how an unguarded policy-expiry condition survived two
+audits. Walking the branches by hand asks the same question of the ones nobody listed.
+
+The policy evaluator came back fully covered: currency, merchant, per-payment limit, daily limit,
+approval threshold, and expiry each fail a test when deleted. The approval threshold is worth
+naming - deleting it makes every purchase ALLOW, removing the human-in-the-loop control entirely,
+and a test objects.
+
+Approval consumption reported two unguarded branches, and that was the probe measuring the wrong
+thing. `consumed_at is not None` and the atomic `rowcount != 1` claim both prevent one approval
+being spent twice, so deleting either leaves the other covering it. Deleting both fails
+`test_a4_an_already_consumed_approval_cannot_authorize_again`. They are kept because they do
+different work: the early check gives a clear error before an update is attempted, and the atomic
+claim is what holds when two callers race.
+
+No mutations were added for the seven already-caught branches. A mutation earns its place by
+guarding something a test would otherwise miss, and eighteen entries that each say something
+distinct are worth more than twenty-seven where nine restate what the suite already proves.
+**Slice:** Third full-repository audit

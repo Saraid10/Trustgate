@@ -45,7 +45,7 @@ def default_model_id() -> str:
     return os.getenv("TRUSTGATE_MODEL_ID") or _DEFAULT_MODELS[_backend()]
 
 
-_SYSTEM = """You are a purchasing assistant for a small organisation.
+_SYSTEM = """You are a purchasing assistant for a small organization.
 
 You will receive a goal and a catalog. Choose exactly one catalog item that best serves the goal
 and reply with a single JSON object and nothing else.
@@ -158,7 +158,7 @@ class ClaudeBuyer:
 
     The response is deliberately not constrained by a strict output schema. A schema would make it
     structurally impossible for the model to emit an authoritative field such as an amount, which
-    would hide the very behaviour the adversarial demonstration needs to show. The narrow contract
+    would hide the very behavior the adversarial demonstration needs to show. The narrow contract
     is enforced by `BuyerAgent`, on the trusted side of the boundary, where it belongs.
     """
 

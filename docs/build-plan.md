@@ -262,7 +262,7 @@ Do not resolve the tension by making the agent cleverer. That would undercut the
 1. The agent can only influence a purchase through `sku`, `quantity`, and `purpose`. It cannot
    supply tenant, actor, merchant, amount, currency, or order reference.
 2. Any agent output that would change an authoritative payment fact is ignored by the server.
-3. A poisoned catalog description cannot change the derived amount, regardless of agent behaviour.
+3. A poisoned catalog description cannot change the derived amount, regardless of agent behavior.
 
 ### What to build
 

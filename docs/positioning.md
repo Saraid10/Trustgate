@@ -41,7 +41,7 @@ covering IoT devices and software (`UPI_OC_No_201_B_FY_2025_26`).
 UPI Circle lets a primary user delegate payment authority to a secondary user, with or without a
 spending limit. That is a shipped, documented Indian payments primitive whose shape is the same one
 this project implements: **a principal grants bounded spending authority to a delegate, and the
-bound is enforced by the system rather than by the delegate's good behaviour.**
+bound is enforced by the system rather than by the delegate's good behavior.**
 
 TrustGate's delegate happens to be software rather than a family member, and its policy carries a
 per-payment cap, a daily cap, and an approval threshold instead of a monthly limit. The structural
@@ -52,7 +52,7 @@ This is the strongest item on this page, because it is the only one that already
 ### NPCI's Unified Agent Protocol — reported, not published
 
 **Evidence: press reporting only.** Multiple outlets reported in July 2026 that NPCI is developing
-a Unified Agent Protocol (UAP) to register, verify, and authorise AI agents transacting over UPI.
+a Unified Agent Protocol (UAP) to register, verify, and authorize AI agents transacting over UPI.
 Reporting is consistent in describing it as *under development in consultation with industry* — the
 language used is "reportedly developing" and "may allow".
 
@@ -61,7 +61,7 @@ Treat every detail as unconfirmed. If this project is discussed with anyone who 
 payments, they will know more than this page does, and the correct posture is to say so.
 
 What is worth noting regardless of the UAP's final shape: the problem it is reported to address —
-*establishing not only who the user is, but whether their agent is legitimate and authorised to
+*establishing not only who the user is, but whether their agent is legitimate and authorized to
 act* — is the problem TrustGate scopes down to a single tenant and solves structurally.
 
 ### Human-in-the-loop above a financial threshold — a recommendation
@@ -88,7 +88,7 @@ because it is the right shape for delegated spending authority, not because a re
 ## What this project is claiming
 
 - The money-critical facts of a purchase can be made structurally unreachable by an agent, rather
-  than defended by filters that recognise attacks.
+  than defended by filters that recognize attacks.
 - That property can be **verified** rather than asserted: 16 adversarial scenarios with a generated
   attack matrix, and 18 deliberate breaks of the safety code that each require their guarding tests
   to fail.

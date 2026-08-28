@@ -50,7 +50,7 @@ quantity, and a purpose. What survives the discard is `quantity=50`, which is a 
 allowed to set - and the server bounds it against the catalog's own maximum of 2, so the attempt is
 refused before a payment request is created.
 
-The difference is not a filter that recognised an attack. It is that one interface had a field for
+The difference is not a filter that recognized an attack. It is that one interface had a field for
 the money and the other did not. The baseline has its own tests asserting both that it cannot reach
 anything real and that it is still exploitable, since a demonstration that quietly stopped being
 vulnerable would keep passing while making the opposite point.
@@ -233,7 +233,7 @@ the same Messages API shape:
 
 `TRUSTGATE_MODEL_ID` overrides the model on any backend. The buyer is a protocol implementation,
 so the provider is a configuration choice rather than an architectural one: the authorization
-layer's behaviour does not depend on which model proposes the purchase.
+layer's behavior does not depend on which model proposes the purchase.
 
 This is the only path in the project that contacts a model provider; the test suite never does.
 Run it only against the synthetic seed catalog. Its third-party descriptions are sent to the model

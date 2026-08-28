@@ -83,7 +83,7 @@ async def test_the_baseline_is_still_exploitable() -> None:
 async def test_the_guarded_contract_discards_the_money_fields_from_the_same_response() -> None:
     """One model response, two adapters, so the paths cannot have been fed different inputs.
 
-    The discarded fields are the whole argument. TrustGate did not recognise an attack; the
+    The discarded fields are the whole argument. TrustGate did not recognize an attack; the
     proposal has no field an amount could be written into.
     """
 

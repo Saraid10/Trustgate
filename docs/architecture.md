@@ -146,7 +146,7 @@ This shapes the verification layers:
 - **Scenario harness** — asserts what *changed*, not what was returned. Self-tested so it cannot
   pass vacuously.
 - **Optimized-mode smoke tests** — `python -O` strips assertions, so safety checks must observe
-  real runtime behaviour.
+  real runtime behavior.
 - **Live runs** — the only layer that has actually caught anything structural.
 
 ### Planned additions

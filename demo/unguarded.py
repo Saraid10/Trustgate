@@ -206,7 +206,7 @@ def format_report(result: BaselineResult) -> str:
         f"     discarded        {', '.join(result.guarded_discarded_fields) or 'nothing'}",
         "     the amount and merchant are derived server-side from the catalog",
         "",
-        "  The difference is not a filter that recognised an attack.",
+        "  The difference is not a filter that recognized an attack.",
         "  It is that one interface had a field for the money and the other did not.",
         "",
     ]

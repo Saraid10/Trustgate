@@ -451,7 +451,7 @@ async def test_an_early_capture_is_refused_and_succeeds_once_authorization_arriv
     A capture arriving before its authorization is refused with a conflict rather than applied out
     of order. Razorpay redelivers anything it does not consider delivered, so the same event
     succeeds once the predecessor lands. This test pins that recovery path, because relying on
-    retry behaviour is only sound if the retry actually works.
+    retry behavior is only sound if the retry actually works.
     """
 
     payment_id = f"pay_{uuid4().hex[:14]}"

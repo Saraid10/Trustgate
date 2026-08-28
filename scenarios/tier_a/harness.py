@@ -10,7 +10,7 @@ A sequential assertion on the response alone cannot distinguish "the request was
 
 These checks raise `ScenarioViolation` rather than using bare `assert`. This module is shipped
 library code, and `python -O` strips assertions: an assert-based harness would report every
-scenario as passing under optimisation while verifying nothing. The same reasoning applies here
+scenario as passing under optimization while verifying nothing. The same reasoning applies here
 as to the state machine's approval requirement.
 """
 

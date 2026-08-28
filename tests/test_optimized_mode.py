@@ -1,13 +1,13 @@
 """Shipped code must not depend on `assert`, and the harness must be proven not to.
 
 `python -O` strips assertion statements at compile time. Code that enforces a rule with `assert`
-therefore enforces nothing under optimisation, and - worse - reports success. The scenario harness
+therefore enforces nothing under optimization, and - worse - reports success. The scenario harness
 raises `ScenarioViolation` explicitly for exactly this reason.
 
 That reasoning sat in a docstring for the whole project and was never tested. Reintroducing the
 mistake proved it matters: replacing the harness's five explicit raises with asserts and running
 `python -O -m pytest tests/test_scenario_harness.py` produces `DID NOT RAISE` on every violation
-case. The checks do not weaken under optimisation; they disappear.
+case. The checks do not weaken under optimization; they disappear.
 
 `make verify-optimized` runs the harness and Tier A suites optimized, and CI runs it on every push.
 """
@@ -20,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Everything that ships and enforces something. Tests are excluded: pytest rewrites assertions in
-# test modules into explicit raises, so theirs survive optimisation and are safe to keep.
+# test modules into explicit raises, so theirs survive optimization and are safe to keep.
 SHIPPED_PACKAGES = (
     "api",
     "agent",
