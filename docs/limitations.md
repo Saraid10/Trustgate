@@ -137,6 +137,23 @@ exceed the captured amount is enforced in the state machine and would apply if o
 
 ---
 
+## Policy validity
+
+A policy carries an absolute expiry and nothing else. There is no start date, so a policy is usable
+the moment it is written and cannot be provisioned ahead of time - a finance lead cannot stage next
+quarter's budget in September and have it become live in October. Everything here is written the
+day it is needed.
+
+Expiry is deliberately per-policy rather than a fixed lifetime, so nothing in the system decides how
+long an authority should last. That is a business decision, and the column is where it goes. What
+the system does insist on is that there is one: an authority with no end is a standing permission
+that outlives whatever it was granted for.
+
+Old versions are never deleted. An authorization recorded under version 3 has to stay resolvable
+long after version 4 supersedes it, and the foreign keys enforce that as much as the intent does.
+Retention and usability are separate: a superseded policy stays readable forever and can authorize
+nothing.
+
 ## Deliberately deferred
 
 Named here rather than silently dropped.
@@ -167,7 +184,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **18 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **20 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

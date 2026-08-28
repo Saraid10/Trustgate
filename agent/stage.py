@@ -24,7 +24,7 @@ import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,6 +72,12 @@ DEMO_APPROVER_FALLBACK = "trustgate-demo-approver"
 # buried in the policy row: a reader should be able to see why each flow ends where it does.
 STARTER_PRICE_MINOR = facts.STARTER_PRICE_MINOR
 TEAM_PRICE_MINOR = facts.TEAM_PRICE_MINOR
+POLICY_LIFETIME = timedelta(days=7)
+"""How long a freshly staged policy is good for."""
+
+POLICY_REFRESH_MARGIN = timedelta(hours=6)
+"""Supersede this far ahead of expiry, so a policy cannot lapse part-way through a recording."""
+
 APPROVAL_THRESHOLD_MINOR = 50_000
 MAX_PAYMENT_MINOR = 100_000
 MAX_DAILY_MINOR = 200_000
@@ -105,6 +111,8 @@ class DemoStage:
     actor_id: str
     approver_id: str
     console_url: str
+    policy_version: int
+    policy_expiry: datetime
 
 
 async def reset_demo_tenant(session: AsyncSession) -> None:
@@ -149,21 +157,46 @@ async def _ensure_configuration(session: AsyncSession) -> None:
         merchant.name = facts.MERCHANT_DISPLAY_NAME
         merchant.is_active = True
 
-    # Written once. Never updated, because the database will not allow it and should not.
-    policy = await session.scalar(select(SpendingPolicy).where(SpendingPolicy.id == DEMO_POLICY_ID))
-    if policy is None:
+    # A policy row is immutable by database trigger, so a standing policy that has run out cannot
+    # be extended - and must not be. What a demo needs is a *newer* policy, which is what versions
+    # are for. Staged once and left for a day, the original expires and every purchase is correctly
+    # denied for policy expiry; on camera that reads as a broken demo rather than a working
+    # invariant, and the recording is where it would have been discovered.
+    newest = await session.scalar(
+        select(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .order_by(SpendingPolicy.version.desc())
+    )
+    if newest is None:
+        policy_id = DEMO_POLICY_ID
         session.add(
             SpendingPolicy(
-                id=DEMO_POLICY_ID,
+                id=policy_id,
                 tenant_id=DEMO_TENANT_ID,
                 version=1,
                 max_amount_minor=MAX_PAYMENT_MINOR,
                 currency="INR",
                 max_daily_spend_minor=MAX_DAILY_MINOR,
-                expiry=datetime.now(UTC) + timedelta(days=1),
+                expiry=datetime.now(UTC) + POLICY_LIFETIME,
                 approval_required_above_minor=APPROVAL_THRESHOLD_MINOR,
             )
         )
+    elif newest.expiry <= datetime.now(UTC) + POLICY_REFRESH_MARGIN:
+        policy_id = uuid4()
+        session.add(
+            SpendingPolicy(
+                id=policy_id,
+                tenant_id=DEMO_TENANT_ID,
+                version=newest.version + 1,
+                max_amount_minor=MAX_PAYMENT_MINOR,
+                currency="INR",
+                max_daily_spend_minor=MAX_DAILY_MINOR,
+                expiry=datetime.now(UTC) + POLICY_LIFETIME,
+                approval_required_above_minor=APPROVAL_THRESHOLD_MINOR,
+            )
+        )
+    else:
+        policy_id = newest.id
     await session.flush()
 
     for item_id, sku, name, description, price, max_quantity in (
@@ -210,10 +243,12 @@ async def _ensure_configuration(session: AsyncSession) -> None:
             item.max_quantity = max_quantity
             item.active = True
 
+    # Against `policy_id`, not the fixed constant: a superseded policy is a different row and
+    # needs its own merchant link, or the new version allows nothing.
     link = await session.scalar(
         select(PolicyMerchant).where(
             PolicyMerchant.tenant_id == DEMO_TENANT_ID,
-            PolicyMerchant.policy_id == DEMO_POLICY_ID,
+            PolicyMerchant.policy_id == policy_id,
             PolicyMerchant.merchant_id == DEMO_MERCHANT_ID,
         )
     )
@@ -221,7 +256,7 @@ async def _ensure_configuration(session: AsyncSession) -> None:
         session.add(
             PolicyMerchant(
                 tenant_id=DEMO_TENANT_ID,
-                policy_id=DEMO_POLICY_ID,
+                policy_id=policy_id,
                 merchant_id=DEMO_MERCHANT_ID,
             )
         )
@@ -238,15 +273,24 @@ async def stage_demo(
 
     await reset_demo_tenant(session)
     await _ensure_configuration(session)
-    return _stage_details(base_url)
+    policy = await session.scalar(
+        select(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .order_by(SpendingPolicy.version.desc())
+    )
+    if policy is None:
+        raise RuntimeError("staging finished without a policy")
+    return _stage_details(base_url, policy)
 
 
-def _stage_details(base_url: str) -> DemoStage:
+def _stage_details(base_url: str, policy: SpendingPolicy) -> DemoStage:
     return DemoStage(
         tenant_id=DEMO_TENANT_ID,
         actor_id=DEMO_ACTOR_ID,
         approver_id=os.getenv("DEMO_APPROVER_ID", DEMO_APPROVER_FALLBACK),
         console_url=f"{base_url.rstrip('/')}/console/{DEMO_TENANT_ID}",
+        policy_version=policy.version,
+        policy_expiry=policy.expiry,
     )
 
 
@@ -276,6 +320,10 @@ def _instructions(stage: DemoStage) -> str:
 
   Console      {stage.console_url}
                (requires ENABLE_CONSOLE=true on the API)
+
+  Policy       v{stage.policy_version}, good until {stage.policy_expiry:%d %b %Y %H:%M} UTC
+               a lapsed policy denies every purchase, which on camera reads as a
+               broken demo rather than a working rule - check this line first
 
   Shell        {_export(stage)}
 

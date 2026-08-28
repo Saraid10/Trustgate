@@ -44,8 +44,13 @@ def evaluate_policy_rules(
 ) -> PolicyDecision:
     """Apply policy rules without database access so the decision is exhaustively testable."""
 
-    if rules is None or rules.expiry <= as_of:
-        return PolicyDecision("DENY", ["POLICY_EXPIRED"], rules.version if rules else 0)
+    if rules is None:
+        # Distinct from expiry on purpose. Both fail closed, and only the diagnosis differs - but
+        # telling an operator a policy expired when there is no policy sends them hunting for a
+        # date nobody ever set.
+        return PolicyDecision("DENY", ["POLICY_NOT_FOUND"], 0)
+    if rules.expiry <= as_of:
+        return PolicyDecision("DENY", ["POLICY_EXPIRED"], rules.version)
 
     reasons: list[str] = []
     if currency != rules.currency:

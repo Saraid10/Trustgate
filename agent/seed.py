@@ -36,7 +36,9 @@ async def seed_demo(session: AsyncSession) -> DemoIdentity:
         max_amount_minor=100_000,
         currency="INR",
         max_daily_spend_minor=200_000,
-        expiry=datetime.now(UTC) + timedelta(days=1),
+        # Seven days, not one. A tenant seeded today and used tomorrow is the exact trap that
+        # left the demo tenant expired: the policy is immutable, so nothing can extend it after.
+        expiry=datetime.now(UTC) + timedelta(days=7),
         approval_required_above_minor=50_000,
     )
     session.add_all([merchant, policy])

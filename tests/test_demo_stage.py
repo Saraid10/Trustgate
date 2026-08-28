@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.stage import (
@@ -20,6 +21,7 @@ from models.domain import (
     AuditEvent,
     CatalogItem,
     PaymentRequest,
+    PolicyMerchant,
     SpendingPolicy,
     Tenant,
 )
@@ -174,6 +176,8 @@ def test_the_printed_exports_match_the_shell_that_will_run_them() -> None:
         actor_id="a-buyer",
         approver_id="a-human",
         console_url="http://127.0.0.1:8000/console/x",
+        policy_version=1,
+        policy_expiry=datetime.now(UTC) + timedelta(days=7),
     )
 
     with patch.object(os, "name", "nt"):
@@ -188,3 +192,105 @@ def test_the_printed_exports_match_the_shell_that_will_run_them() -> None:
     for shell in (windows, posix):
         assert str(DEMO_TENANT_ID) in shell
         assert "a-buyer" in shell
+
+
+async def test_staging_supersedes_a_policy_that_has_run_out(async_session: AsyncSession) -> None:
+    """The bug this exists for cost nothing to write and would have cost a recording.
+
+    A policy is immutable by trigger, and the first version was staged with a one-day expiry. Left
+    overnight it lapses, restaging cannot extend it, and every purchase is then correctly denied
+    for policy expiry - which on camera looks like a broken project rather than a working
+    invariant. The demo tenant in this repository was in exactly that state when it was found.
+    """
+
+    await stage_demo(async_session)
+    original = await async_session.scalar(
+        select(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .order_by(SpendingPolicy.version.desc())
+    )
+    assert original is not None
+
+    # Age it the only way the database permits: a new row, not an edit.
+    await async_session.execute(
+        text("ALTER TABLE spending_policy DISABLE TRIGGER spending_policy_immutable")
+    )
+    await async_session.execute(
+        update(SpendingPolicy)
+        .where(SpendingPolicy.id == original.id)
+        .values(expiry=datetime.now(UTC) - timedelta(hours=1))
+    )
+    await async_session.execute(
+        text("ALTER TABLE spending_policy ENABLE TRIGGER spending_policy_immutable")
+    )
+
+    await stage_demo(async_session)
+
+    newest = await async_session.scalar(
+        select(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .order_by(SpendingPolicy.version.desc())
+    )
+    assert newest is not None
+    assert newest.version == original.version + 1, "an expired policy was not superseded"
+    assert newest.expiry > datetime.now(UTC), "the new version is already expired"
+
+
+async def test_a_policy_with_life_left_is_not_superseded(async_session: AsyncSession) -> None:
+    """Otherwise every take would burn a version number for no reason."""
+
+    await stage_demo(async_session)
+    first = await async_session.scalar(
+        select(func.count())
+        .select_from(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+    )
+
+    await stage_demo(async_session)
+    second = await async_session.scalar(
+        select(func.count())
+        .select_from(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+    )
+
+    # Not a fixed number: the committed demo tenant may already carry superseded versions
+    # from earlier runs. What must hold is that staging again adds nothing.
+    assert first == second, "a policy with life left was superseded anyway"
+
+
+async def test_the_newest_policy_can_pay_the_merchant(async_session: AsyncSession) -> None:
+    """A superseded policy is a different row, and needs its own merchant link.
+
+    Without one the new version allows no merchant at all, and every purchase is refused for a
+    reason that looks nothing like the cause.
+    """
+
+    await stage_demo(async_session)
+    await async_session.execute(
+        text("ALTER TABLE spending_policy DISABLE TRIGGER spending_policy_immutable")
+    )
+    await async_session.execute(
+        update(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .values(expiry=datetime.now(UTC) - timedelta(hours=1))
+    )
+    await async_session.execute(
+        text("ALTER TABLE spending_policy ENABLE TRIGGER spending_policy_immutable")
+    )
+    await stage_demo(async_session)
+
+    newest = await async_session.scalar(
+        select(SpendingPolicy)
+        .where(SpendingPolicy.tenant_id == DEMO_TENANT_ID)
+        .order_by(SpendingPolicy.version.desc())
+    )
+    assert newest is not None
+    linked = await async_session.scalar(
+        select(func.count())
+        .select_from(PolicyMerchant)
+        .where(
+            PolicyMerchant.tenant_id == DEMO_TENANT_ID,
+            PolicyMerchant.policy_id == newest.id,
+        )
+    )
+    assert linked == 1, "the superseding policy allows no merchant"

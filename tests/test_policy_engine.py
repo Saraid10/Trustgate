@@ -383,7 +383,9 @@ async def test_policy_without_a_tenant_configuration_fails_closed(
         currency="INR",
     )
     assert result.decision == "DENY"
-    assert result.reasons == ["POLICY_EXPIRED"]
+    # Not POLICY_EXPIRED. There is no policy here, and saying one expired sends whoever reads it
+    # looking for a date that was never set. Both fail closed; only the diagnosis differs.
+    assert result.reasons == ["POLICY_NOT_FOUND"]
     assert result.policy_version == 0
 
 

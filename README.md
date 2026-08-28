@@ -174,6 +174,8 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `self-approval-guard` | An approval cannot be granted by the requesting actor. |
 | `evidence-tenant-filter` | Evidence is scoped to the tenant that asked for it. |
 | `receipt-search-fail-closed` | An incomplete provider search never reports a receipt as absent. |
+| `policy-expiry-denies-spending` | An expired policy cannot authorize new spending. |
+| `missing-policy-fails-closed` | A tenant with no policy is denied rather than allowed by default. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

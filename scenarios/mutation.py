@@ -247,6 +247,27 @@ MUTATIONS: tuple[Mutation, ...] = (
             "tests/test_provider_order_recovery.py::test_an_incomplete_receipt_search_fails_closed",
         ),
     ),
+    Mutation(
+        name="policy-expiry-denies-spending",
+        invariant="An expired policy cannot authorize new spending.",
+        path="policy_engine/evaluate.py",
+        original=(
+            "    if rules.expiry <= as_of:\n"
+            '        return PolicyDecision("DENY", ["POLICY_EXPIRED"], rules.version)\n'
+        ),
+        mutated="",
+        guarding_tests=("tests/test_policy_engine.py::test_policy_rejects_expired_current_policy",),
+    ),
+    Mutation(
+        name="missing-policy-fails-closed",
+        invariant="A tenant with no policy is denied rather than allowed by default.",
+        path="policy_engine/evaluate.py",
+        original='        return PolicyDecision("DENY", ["POLICY_NOT_FOUND"], 0)\n',
+        mutated='        return PolicyDecision("ALLOW", [], 0)\n',
+        guarding_tests=(
+            "tests/test_policy_engine.py::test_policy_without_a_tenant_configuration_fails_closed",
+        ),
+    ),
 )
 
 
