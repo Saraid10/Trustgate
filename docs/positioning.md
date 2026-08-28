@@ -49,6 +49,36 @@ claim is the same: authority is delegated, bounded, and enforced centrally.
 
 This is the strongest item on this page, because it is the only one that already exists.
 
+### Razorpay and NPCI — agentic payments on UPI, in pilot
+
+**Evidence: primary, from the company's own announcement.** Razorpay's blog post "Agentic Payments
+for UPI on Claude" describes an announcement made with NPCI at the India AI Impact Summit in New
+Delhi on 20 February 2026.
+
+The design as stated there: a user gives a one-time, consent-based authorization by setting a
+spending limit for a merchant, and within that limit an AI agent can transact without repeated
+authentication prompts. The user keeps visibility and can revoke consent instantly. It is built on
+UPI Reserve Pay, and is in pilot with a closed user group, with Zomato, Swiggy and Zepto named.
+
+Press reporting adds figures the announcement page itself does not state - a cap per mandate, a
+validity period, and Single Block Multi Debit as the underlying mechanism. Those are press, and are
+deliberately not repeated here as fact.
+
+This matters to this project more than anything else on the page, for two reasons.
+
+The first is that the shape is the same. A principal sets a bound, a software delegate spends
+inside it, the bound is enforced by the system rather than by the delegate, and the principal can
+revoke. TrustGate arrived at a per-payment cap, a daily cap, an approval threshold, and a
+short-lived single-use authority bound to one purchase. That convergence was not designed in; this
+page had already cited UPI Circle for the same structural reason before the pilot was announced.
+
+The second is less comfortable and more useful. The obvious framing for a project like this is
+already occupied. Offering "a safe way for an agent to pay" is offering something Razorpay put into
+pilot in February, and something Google, Visa and Mastercard have each published a protocol for.
+What is not occupied is whether controls of this shape actually hold when someone tries to break
+them - which is the question the adversarial scenarios and the mutation suite exist to answer, and
+the one this project should be read as addressing.
+
 ### NPCI's Unified Agent Protocol — reported, not published
 
 **Evidence: press reporting only.** Multiple outlets reported in July 2026 that NPCI is developing
@@ -111,6 +141,8 @@ because it is the right shape for delegated spending authority, not because a re
   secondary users](https://www.npci.org.in/PDF/npci/upi/circular/2024/UPI-OC-No-201-FY-24-25-Introduction-of-UPI%20Circle%E2%80%93Delegated-Payments-for-secondary-users.pdf)
 - [NPCI addendum — IoT devices and software on UPI
   Circle](https://www.npci.org.in/uploads/UPI_OC_No_201_B_FY_2025_26_Addendum_to_NPCI_UPI_2024_25_OC_201_Introduction_of_Io_T_devices_software_on_UPI_Circle_09ec83c893.pdf)
+- [Razorpay - Agentic Payments for UPI on
+  Claude](https://razorpay.com/blog/agentic-payments-and-npci/)
 - [Business Standard — India may allow agentic AI-led UPI transactions under new NPCI
   protocol](https://www.business-standard.com/finance/news/india-may-allow-agentic-ai-led-upi-transactions-under-new-npci-protocol-126070801343_1.html)
 - [MediaNama — How NPCI should approach agentic
