@@ -24,19 +24,39 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Columns whose value the database also generates or compares against a generated one. A Python
 # datetime for any of these is a bet on two clocks agreeing.
-_SERVER_COMPARED_COLUMNS = ("used_at",)
+_SERVER_COMPARED_COLUMNS = ("used_at", "revoked_at", "released_at")
 
+# `= datetime.now(` was too narrow: `revoked_at=at or datetime.now(UTC)` is the same mistake
+# wearing an override, and that is exactly the form the delegation module was written in.
+# Anchoring to the start of a line only ever matched fixture keyword arguments. The delegation
+# module writes `.values(revoked_at=at or datetime.now(UTC))`, where the column sits mid-line
+# behind a call - so the guard passed over the exact code it was being widened to cover. Verified
+# by reintroducing the fault and watching this fail.
 _HOST_CLOCK = re.compile(
-    r"^\s*(" + "|".join(_SERVER_COMPARED_COLUMNS) + r")\s*=\s*datetime\.now\(", re.MULTILINE
+    r"(?<![\w.])("
+    + "|".join(_SERVER_COMPARED_COLUMNS)
+    + r")\s*=\s*(?:[a-z_]+\s+or\s+)?datetime\.now\("
 )
 
 
 def _python_sources() -> list[Path]:
+    """Every package that ships, plus the tests, discovered rather than listed.
+
+    The previous version named five directories and `delegation` was not among them, so the module
+    that reintroduced this exact bug was never looked at. A hardcoded list of places to check is a
+    list that goes stale the first time someone adds a package - which has now happened three times
+    in this repository, to the mypy configuration, the locking search, and here.
+    """
+
+    roots = [REPO_ROOT / "tests"] + [
+        path.parent for path in REPO_ROOT.glob("*/__init__.py") if path.parent.name != "tests"
+    ]
     return sorted(
         path
-        for directory in ("tests", "agent", "api", "mcp_server", "scenarios")
-        for path in (REPO_ROOT / directory).rglob("*.py")
-        if "__pycache__" not in path.parts
+        for root in roots
+        for path in root.rglob("*.py")
+        # This file states the fault in order to forbid it, so it always matches itself.
+        if "__pycache__" not in path.parts and path.name != Path(__file__).name
     )
 
 
@@ -68,3 +88,20 @@ def test_the_constraint_this_protects_still_exists() -> None:
 
     assert "ck_checkout_authority_use_after_creation" in models
     assert "used_at IS NULL OR used_at >= created_at" in models
+    assert "ck_delegation_revocation_after_creation" in models
+    assert "revoked_at IS NULL OR revoked_at >= created_at" in models
+    assert "ck_delegation_spend_release_after_creation" in models
+    assert "released_at IS NULL OR released_at >= created_at" in models
+
+
+def test_the_search_covers_delegation() -> None:
+    """The module that reintroduced the bug must be inside the net that catches it.
+
+    Named explicitly rather than trusted to the glob, because the glob is what silently excluded it
+    last time.
+    """
+
+    scanned = {path.relative_to(REPO_ROOT).parts[0] for path in _python_sources()}
+
+    assert "delegation" in scanned
+    assert {"tests", "agent", "api", "models", "policy_engine", "state_machine"} <= scanned

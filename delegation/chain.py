@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -289,7 +289,11 @@ async def revoke(
             Delegation.id == delegation_id,
             Delegation.revoked_at.is_(None),
         )
-        .values(revoked_at=at or datetime.now(UTC))
+        # func.now() is Postgres's clock, and `created_at` came from the same one. A host
+        # datetime here is a bet on two machines agreeing about the time, which this project has
+        # already measured them not doing - and `ck_delegation_revocation_after_creation` is what
+        # would fail, intermittently, somewhere else.
+        .values(revoked_at=at or func.now())
     )
     if int(getattr(revoked, "rowcount", 0)) != 1:
         raise DelegationRefused("DELEGATION_ALREADY_REVOKED")
@@ -471,7 +475,9 @@ async def release(
                 DelegationSpend.reference == reference,
                 DelegationSpend.released_at.is_(None),
             )
-            .values(released_at=at or datetime.now(UTC))
+            # Postgres's clock, for the reason `revoke` uses it:
+            # ck_delegation_spend_release_after_creation compares this against a server default.
+            .values(released_at=at or func.now())
             .returning(DelegationSpend.delegation_id, DelegationSpend.amount_minor)
         )
     ).first()

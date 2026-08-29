@@ -729,7 +729,7 @@ async def test_a_revoke_cannot_land_between_validating_a_chain_and_spending_it()
                 await revoker.execute(
                     update(Delegation)
                     .where(Delegation.tenant_id == data.tenant_id, Delegation.id == root_id)
-                    .values(revoked_at=datetime.now(UTC))
+                    .values(revoked_at=func.now())
                 )
             assert "lock" in str(blocked.value).casefold(), (
                 "the revoke was not blocked, so the spend never held its ancestors"

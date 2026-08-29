@@ -6,9 +6,14 @@ approval, or provider outcome. The agent proposes; TrustGate independently autho
 evidence.
 
 The part worth looking at is not that it refuses things. It is that the refusals are **verified
-rather than asserted**. Every safety invariant in this repository is deleted on purpose, one at a
-time, and a test has to fail. That is how an unguarded policy-expiry check was found here after two
-clean audits: 302 tests passed with the check removed.
+rather than asserted**. Every invariant in the mutation registry below is deleted on purpose, one
+at a time, and a test has to fail. That is how an unguarded policy-expiry check was found here
+after two clean audits: 302 tests passed with the check removed.
+
+The registry is targeted, not exhaustive, and the distinction is worth keeping. It covers guards
+that live in Python. Guards that live in the database - triggers, check constraints, partial unique
+indexes - are proven instead by tests that violate them directly, because a mutation runner edits
+source files and a trigger already applied to a schema would not notice.
 
 ## What It Proves
 
@@ -16,8 +21,10 @@ clean audits: 302 tests passed with the check removed.
 - Tenant-scoped policy, human approval, a one-time checkout authority, and verified provider events
   bound every payment action.
 - Authority delegated onward narrows at every hop, and the hops below a node cannot, between them,
-  promise more than that node holds.
+  promise more than that node holds. **In the delegation engine, which no payment consults yet** -
+  see [Delegated Authority](#delegated-authority-and-why-a-budget-is-not-a-capability).
 - Revoking one hop ends every branch below it without touching a descendant or recalling anything.
+  Same engine, same boundary.
 - Unsafe attempts are rejected before a provider order can be created and leave an auditable trace.
 
 ## How AI Is Used Here
