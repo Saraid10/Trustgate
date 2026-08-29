@@ -50,6 +50,25 @@ _RECEIPT_SEARCH_PAGE_SIZE = 100
 _RECEIPT_SEARCH_MAX_PAGES = 20
 
 
+TEST_KEY_PREFIX = "rzp_test_"
+"""Razorpay separates test from live by key, not by endpoint."""
+
+
+def require_test_mode(key_id: str) -> str:
+    """Refuse a key that is not a Test Mode key.
+
+    This project says Test Mode everywhere and, until now, only checked that a key was non-empty.
+    There is one orders URL: the same request with a live key moves real money, and the only thing
+    standing between a mistyped deployment variable and a real charge was the documentation.
+    """
+
+    if not key_id.startswith(TEST_KEY_PREFIX):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="RAZORPAY_NOT_TEST_MODE"
+        )
+    return key_id
+
+
 def _credentials() -> tuple[str, str]:
     key_id = os.getenv("RAZORPAY_KEY_ID")
     key_secret = os.getenv("RAZORPAY_KEY_SECRET")
@@ -57,7 +76,7 @@ def _credentials() -> tuple[str, str]:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="RAZORPAY_UNAVAILABLE"
         )
-    return key_id, key_secret
+    return require_test_mode(key_id), key_secret
 
 
 async def _create_razorpay_order(

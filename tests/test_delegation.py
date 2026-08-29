@@ -192,10 +192,15 @@ async def test_a_child_may_not_widen_its_parent(
 
 
 @pytest.mark.asyncio
-async def test_an_over_wide_child_is_refused_before_the_trigger_is_reached(
+async def test_an_over_wide_child_is_named_before_the_database_has_to_say_it(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    """Budget is the one dimension two guards both cover, and the claim gets there first."""
+    """A reason a caller can act on, for a refusal the trigger would make anyway.
+
+    The parent is already loaded by this point, so comparing against it costs a read and nothing
+    else. It is not where the rule lives - `test_the_trigger_refuses_an_over_wide_child_written_
+    around_the_claim` covers that - it is just the difference between a reason and a stack trace.
+    """
 
     root = await _root(async_session, seeded_fixture_data, budget=100_000)
 
@@ -209,7 +214,7 @@ async def test_an_over_wide_child_is_refused_before_the_trigger_is_reached(
             bounds=_bounds(budget=200_000),
         )
 
-    assert refused.value.reason == "DELEGATION_BUDGET_EXHAUSTED"
+    assert refused.value.reason == "DELEGATION_BUDGET_EXCEEDS_PARENT"
 
 
 @pytest.mark.asyncio
@@ -1084,3 +1089,115 @@ async def test_reusing_a_reference_for_a_different_spend_is_refused(
         select(Delegation.spent_minor).where(Delegation.id == root.id)
     )
     assert spent == 5_000
+
+
+# --- what a writer who skips this module can still not do ---------------------------------------
+
+
+def _raw_child(parent: Delegation, *, name: str, budget: int) -> Delegation:
+    """A child written the way `grant` never would: straight in, no bookkeeping."""
+
+    return Delegation(
+        id=uuid4(),
+        tenant_id=parent.tenant_id,
+        parent_id=parent.id,
+        depth=parent.depth + 1,
+        policy_id=parent.policy_id,
+        policy_version=parent.policy_version,
+        root_actor_id=parent.root_actor_id,
+        delegator_actor_id=parent.delegate_actor_id,
+        delegate_actor_id=name,
+        budget_minor=budget,
+        allocated_minor=0,
+        spent_minor=0,
+        max_amount_minor=parent.max_amount_minor,
+        allowed_skus=list(parent.allowed_skus),
+        purpose="written around the module",
+        expires_at=parent.expires_at,
+    )
+
+
+@pytest.mark.asyncio
+async def test_siblings_written_straight_to_the_database_cannot_outgrow_their_parent(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The aggregate has to hold for any writer, not for callers who do the bookkeeping.
+
+    It did not. `allocated_minor` was only ever moved by `grant`, so an insert that skipped this
+    module left it at zero and `ck_delegation_budget_partitioned` had nothing to object to: three
+    children of 1,000 were written under a parent holding 1,000, and every per-edge check passed
+    them on the way in. The trigger takes the allocation itself now.
+    """
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+
+    async with async_session.begin_nested():
+        async_session.add(_raw_child(root, name="first", budget=50_000))
+        await async_session.flush()
+
+    with pytest.raises(DBAPIError) as raised:
+        async with async_session.begin_nested():
+            async_session.add(_raw_child(root, name="second", budget=50_000))
+            await async_session.flush()
+
+    assert "DELEGATION_BUDGET_EXHAUSTED" in str(raised.value)
+
+    allocated = await async_session.scalar(
+        select(Delegation.allocated_minor).where(Delegation.id == root.id)
+    )
+    assert allocated == 50_000, "the database did not take the allocation itself"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("budget_minor", 99_999_999, "budget may not exceed the policy daily limit"),
+        ("max_amount_minor", 99_999_999, "per-payment cap may not exceed the policy"),
+        ("expires_at", datetime(2036, 1, 1, tzinfo=UTC), "may not outlive the policy"),
+    ],
+    ids=["budget", "payment-cap", "expiry"],
+)
+async def test_a_root_written_straight_to_the_database_cannot_exceed_its_policy(
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    field: str,
+    value: object,
+    expected: str,
+) -> None:
+    """The trigger used to return immediately for a root, so its bounds lived only in Python.
+
+    A root of 99,999,999 was accepted against a policy capping 200,000.
+    """
+
+    policy = seeded_fixture_data.tenant_a_policy
+    fields = {
+        "budget_minor": 10_000,
+        "max_amount_minor": 10_000,
+        "expires_at": NOW + timedelta(days=1),
+    }
+    fields[field] = value
+
+    with pytest.raises(DBAPIError) as raised:
+        async with async_session.begin_nested():
+            async_session.add(
+                Delegation(
+                    id=uuid4(),
+                    tenant_id=seeded_fixture_data.tenant_a.id,
+                    parent_id=None,
+                    depth=0,
+                    policy_id=policy.id,
+                    policy_version=policy.version,
+                    root_actor_id="human-principal",
+                    delegator_actor_id="human-principal",
+                    delegate_actor_id="written-around",
+                    allocated_minor=0,
+                    spent_minor=0,
+                    allowed_skus=["CLOUD-STARTER"],
+                    purpose="written around the module",
+                    **fields,
+                )
+            )
+            await async_session.flush()
+
+    assert expected in str(raised.value)

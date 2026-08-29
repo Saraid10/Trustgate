@@ -180,6 +180,11 @@ What is not attempted:
 - **A spend's `reference` has no foreign key.** Integration will pass the payment request it is
   authorizing, but nothing here checks that the reference names a real one - deliberately, while
   this module is not yet wired into the payment graph. That check belongs in the wiring.
+- **The mutation count went down by one, and the guarantee went up.** The sibling-budget
+  aggregate used to be maintained in Python and covered by a mutation. It now lives in the
+  `delegation_attenuates` trigger, where a mutation runner cannot reach it, and is covered by tests
+  that violate it directly instead. Fewer mutations, a stronger invariant, weaker-shaped evidence -
+  worth knowing rather than reading the number as a regression.
 - **`purpose` is evidence, not a bound.** It travels with a hop and is frozen after grant, but no
   trigger and no spend check consults it, because free text has no narrowing relation a database
   can enforce. `allowed_skus` is what actually scopes a hop. A child may rewrite its stated purpose
@@ -230,7 +235,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **34 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **33 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_session
+from api.routes.razorpay import require_test_mode
 from models.domain import CheckoutAuthority, PaymentRequest, RazorpayOrder
 
 router = APIRouter(prefix="/api/v1/razorpay", tags=["razorpay test mode"])
@@ -252,6 +253,10 @@ async def render_checkout_page(
             status_code=status.HTTP_404_NOT_FOUND, detail="RAZORPAY_ORDER_NOT_FOUND"
         )
     key_id = os.getenv("RAZORPAY_KEY_ID")
+    if key_id:
+        # The page hands this key to the browser, which then talks to Razorpay directly. A live
+        # key here opens a real payment sheet, so the same guard applies on this path too.
+        key_id = require_test_mode(key_id)
     if not key_id:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

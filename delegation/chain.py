@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.domain import AuditEvent, Delegation, DelegationSpend, SpendingPolicy
@@ -178,20 +179,10 @@ async def grant(
         raise DelegationRefused("DELEGATION_PARENT_NOT_FOUND")
     if parent.depth + 1 > MAX_DEPTH:
         raise DelegationRefused("DELEGATION_DEPTH_EXCEEDED")
-
-    claimed = await session.execute(
-        update(Delegation)
-        .where(
-            Delegation.tenant_id == tenant_id,
-            Delegation.id == parent_id,
-            Delegation.revoked_at.is_(None),
-            Delegation.allocated_minor + Delegation.spent_minor + bounds.budget_minor
-            <= Delegation.budget_minor,
-        )
-        .values(allocated_minor=Delegation.allocated_minor + bounds.budget_minor)
-    )
-    if int(getattr(claimed, "rowcount", 0)) != 1:
-        raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED")
+    if bounds.budget_minor > parent.budget_minor:
+        # A read, not bookkeeping: the parent is already loaded, and the trigger would refuse this
+        # anyway as a raw database error. This turns it into a reason a caller can act on.
+        raise DelegationRefused("DELEGATION_BUDGET_EXCEEDS_PARENT")
 
     child = Delegation(
         id=uuid4(),
@@ -211,8 +202,20 @@ async def grant(
         purpose=bounds.purpose,
         expires_at=bounds.expires_at,
     )
-    session.add(child)
-    await session.flush()
+    # The parent's allocation is taken by `delegation_attenuates`, inside this insert, so that it
+    # holds for any writer rather than for callers who remember to do the bookkeeping. Doing it
+    # here as well would count it twice.
+    savepoint = await session.begin_nested()
+    try:
+        session.add(child)
+        await session.flush()
+    except DBAPIError as exhausted:
+        await savepoint.rollback()
+        if "DELEGATION_BUDGET_EXHAUSTED" in str(exhausted):
+            raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED") from exhausted
+        raise
+    await savepoint.commit()
+
     session.add(
         _evidence(
             tenant_id=tenant_id,

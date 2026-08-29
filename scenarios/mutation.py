@@ -268,20 +268,12 @@ MUTATIONS: tuple[Mutation, ...] = (
             "tests/test_policy_engine.py::test_policy_without_a_tenant_configuration_fails_closed",
         ),
     ),
-    Mutation(
-        name="delegation-aggregate-partition",
-        invariant="Sibling delegations cannot together promise more than their parent holds.",
-        path="delegation/chain.py",
-        original=(
-            "            Delegation.allocated_minor + Delegation.spent_minor "
-            "+ bounds.budget_minor\n"
-            "            <= Delegation.budget_minor,\n"
-        ),
-        mutated="            Delegation.budget_minor >= bounds.budget_minor,\n",
-        guarding_tests=(
-            "tests/test_delegation.py::test_two_children_cannot_together_outspend_their_parent",
-        ),
-    ),
+    # `delegation-aggregate-partition` was here. The invariant did not go away - it moved into
+    # `delegation_attenuates`, which now takes the parent's allocation itself so that it holds for
+    # any writer rather than for callers who remember the bookkeeping. A mutation runner edits
+    # source files, and a trigger already applied to a schema would not notice, so the guarantee
+    # got stronger and its evidence changed shape: see the test in tests/test_delegation.py named
+    # test_siblings_written_straight_to_the_database_cannot_outgrow_their_parent
     Mutation(
         name="delegation-spend-against-allocation",
         invariant="A hop cannot spend budget it has already promised to the hops below it.",

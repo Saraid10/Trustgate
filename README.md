@@ -138,10 +138,16 @@ literature, the macaroon family, and the IETF attenuating-token draft all mean b
 Money is not a set. Two children each granted exactly their parent's budget satisfy every per-edge
 comparison and hold twice the parent's budget between them. Budgets add where sets intersect.
 
-TrustGate therefore **partitions** a parent's budget rather than comparing against it. What a node
-has promised downward is claimed by conditional update, and the parent's own row carries a check
-constraint that refuses the sum - so the invariant survives every line of the application being
-wrong. `python -m agent.delegate` walks four hops and shows the sibling being refused.
+TrustGate therefore **partitions** a parent's budget rather than comparing against it. The
+`delegation_attenuates` trigger takes the allocation from the parent as part of writing the child,
+so the aggregate holds for anything that inserts a row rather than for callers who remember the
+bookkeeping. `python -m agent.delegate` walks four hops and shows the sibling being refused.
+
+An earlier version claimed this "survives every line of the application being wrong" while the
+allocation was still maintained in Python. It did not: three children of 1,000 were written under a
+parent holding 1,000 by an insert that skipped the module, and every per-edge check passed them.
+The claim is true now because the trigger does the work, and
+`test_siblings_written_straight_to_the_database_cannot_outgrow_their_parent` is what says so.
 
 The mutation named `delegation-aggregate-partition` is the evidence that this is a real distinction
 and not a stylistic one: delete the aggregate claim and every other delegation test still passes.
@@ -230,7 +236,6 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `receipt-search-fail-closed` | An incomplete provider search never reports a receipt as absent. |
 | `policy-expiry-denies-spending` | An expired policy cannot authorize new spending. |
 | `missing-policy-fails-closed` | A tenant with no policy is denied rather than allowed by default. |
-| `delegation-aggregate-partition` | Sibling delegations cannot together promise more than their parent holds. |
 | `delegation-spend-against-allocation` | A hop cannot spend budget it has already promised to the hops below it. |
 | `delegation-chain-revocation` | Revoking one hop stops every hop below it. |
 | `delegation-chain-payment-cap` | A spend is bound by the narrowest per-payment cap anywhere above it. |
