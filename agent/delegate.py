@@ -34,7 +34,7 @@ from delegation.chain import (
     revoke,
     spend,
 )
-from models.domain import Delegation, DelegationSpend, SpendingPolicy
+from models.domain import AuditEvent, Delegation, DelegationSpend, SpendingPolicy
 
 PRINCIPAL = "finance-lead@demo"
 BUYER = "demo-buyer-agent"
@@ -65,6 +65,13 @@ class Demonstration:
 async def _clear(session: AsyncSession) -> None:
     """Deepest hop first: a delegation points at its parent with RESTRICT."""
 
+    # Only the evidence that names a delegation: the payment timeline is not this command's to
+    # clear, and it is deleted before the hops it points at.
+    await session.execute(
+        delete(AuditEvent).where(
+            AuditEvent.tenant_id == DEMO_TENANT_ID, AuditEvent.delegation_id.is_not(None)
+        )
+    )
     await session.execute(
         delete(DelegationSpend).where(DelegationSpend.tenant_id == DEMO_TENANT_ID)
     )

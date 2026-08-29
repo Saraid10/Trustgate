@@ -30,7 +30,7 @@ from delegation.chain import (
     revoke,
     spend,
 )
-from models.domain import Delegation, DelegationSpend, SpendingPolicy
+from models.domain import AuditEvent, Delegation, DelegationSpend, SpendingPolicy
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
 """Pinned, for the reason the daily-spend race test is pinned: a clock read is not a fixture."""
@@ -789,3 +789,156 @@ async def test_a_refused_spend_leaves_no_ledger_row_behind(
         .where(DelegationSpend.reference == reference)
     )
     assert orphan == 0, "the refused spend burned its reference"
+
+
+# --- evidence ----------------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_every_delegation_operation_leaves_evidence(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The rest of this project records what it did and why. So does this now."""
+
+    tenant_id = seeded_fixture_data.tenant_a.id
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    child = await grant(
+        async_session,
+        tenant_id=tenant_id,
+        parent_id=root.id,
+        delegator_actor_id="agent-a",
+        delegate_actor_id="agent-b",
+        bounds=_bounds(budget=20_000),
+    )
+    reference = uuid4()
+    await spend(
+        async_session,
+        tenant_id=tenant_id,
+        delegation_id=child.id,
+        amount_minor=5_000,
+        sku="CLOUD-STARTER",
+        reference=reference,
+        as_of=NOW,
+    )
+    await release(async_session, tenant_id=tenant_id, reference=reference)
+    await revoke(async_session, tenant_id=tenant_id, delegation_id=child.id)
+
+    kinds = (
+        (
+            await async_session.execute(
+                select(AuditEvent.event_kind).where(
+                    AuditEvent.tenant_id == tenant_id, AuditEvent.delegation_id.is_not(None)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    assert sorted(kinds) == [
+        "delegation_granted",
+        "delegation_granted",
+        "delegation_released",
+        "delegation_revoked",
+        "delegation_spent",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_spend_records_the_chain_that_authorized_it(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The attribution question, answered from the evidence rather than reconstructed.
+
+    Given a spend, the audit row names every hop that agreed to it and the human at the root. That
+    is what the delegation literature calls the accountability chain, and it is the thing a
+    one-hop mandate cannot answer past the first hop.
+    """
+
+    tenant_id = seeded_fixture_data.tenant_a.id
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    child = await grant(
+        async_session,
+        tenant_id=tenant_id,
+        parent_id=root.id,
+        delegator_actor_id="agent-a",
+        delegate_actor_id="agent-b",
+        bounds=_bounds(budget=20_000),
+    )
+    await spend(
+        async_session,
+        tenant_id=tenant_id,
+        delegation_id=child.id,
+        amount_minor=5_000,
+        sku="CLOUD-STARTER",
+        reference=uuid4(),
+        as_of=NOW,
+    )
+
+    event = await async_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.tenant_id == tenant_id, AuditEvent.event_kind == "delegation_spent"
+        )
+    )
+
+    assert event is not None
+    assert event.delegation_id == child.id
+    assert event.payload["chain"] == [str(root.id), str(child.id)]
+    assert event.payload["root_actor_id"] == "human-principal"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_spend_leaves_no_evidence_of_spending(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Evidence of a spend that did not happen is worse than none."""
+
+    tenant_id = seeded_fixture_data.tenant_a.id
+    root = await _root(async_session, seeded_fixture_data, budget=10_000)
+
+    with pytest.raises(DelegationRefused):
+        await spend(
+            async_session,
+            tenant_id=tenant_id,
+            delegation_id=root.id,
+            amount_minor=99_000,
+            sku="CLOUD-STARTER",
+            reference=uuid4(),
+            as_of=NOW,
+        )
+
+    spent_events = await async_session.scalar(
+        select(func.count())
+        .select_from(AuditEvent)
+        .where(AuditEvent.tenant_id == tenant_id, AuditEvent.event_kind == "delegation_spent")
+    )
+    assert spent_events == 0
+
+
+@pytest.mark.asyncio
+async def test_a_correlation_id_is_carried_into_the_evidence(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """What joins a delegation's evidence to the payment timeline it belongs to."""
+
+    tenant_id = seeded_fixture_data.tenant_a.id
+    correlation_id = uuid4()
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    await spend(
+        async_session,
+        tenant_id=tenant_id,
+        delegation_id=root.id,
+        amount_minor=5_000,
+        sku="CLOUD-STARTER",
+        reference=uuid4(),
+        as_of=NOW,
+        correlation_id=correlation_id,
+    )
+
+    event = await async_session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.tenant_id == tenant_id, AuditEvent.event_kind == "delegation_spent"
+        )
+    )
+    assert event is not None
+    assert event.correlation_id == correlation_id

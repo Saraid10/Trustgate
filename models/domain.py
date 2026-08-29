@@ -629,10 +629,17 @@ class AuditEvent(Base):
             name="fk_audit_event_provider_order_tenant",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "delegation_id"],
+            ["delegation.tenant_id", "delegation.id"],
+            name="fk_audit_event_delegation_tenant",
+            ondelete="RESTRICT",
+        ),
         Index("ix_audit_event_tenant_payment_request", "tenant_id", "payment_request_id"),
         Index("ix_audit_event_tenant_payment", "tenant_id", "payment_id"),
         Index("ix_audit_event_tenant_checkout_authority", "tenant_id", "checkout_authority_id"),
         Index("ix_audit_event_tenant_provider_order", "tenant_id", "provider_order_id"),
+        Index("ix_audit_event_tenant_delegation", "tenant_id", "delegation_id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -645,6 +652,7 @@ class AuditEvent(Base):
     payment_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     checkout_authority_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     provider_order_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    delegation_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     correlation_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     event_kind: Mapped[str] = mapped_column(String(255), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

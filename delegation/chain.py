@@ -21,7 +21,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.domain import Delegation, DelegationSpend, SpendingPolicy
+from models.domain import AuditEvent, Delegation, DelegationSpend, SpendingPolicy
 from models.locking import locked
 
 MAX_DEPTH = 8
@@ -47,6 +47,32 @@ class Bounds:
     expires_at: datetime
 
 
+def _evidence(
+    *,
+    tenant_id: UUID,
+    delegation_id: UUID,
+    correlation_id: UUID | None,
+    kind: str,
+    payload: dict[str, object],
+) -> AuditEvent:
+    """One audit row for a delegation operation.
+
+    `correlation_id` is optional here and should not be. Integration passes the correlation of the
+    payment being authorized, which is what joins a delegation's evidence to the payment timeline
+    it belongs to; a caller that omits it gets a fresh one and an event that is recorded but not
+    joined. Made optional rather than required so the existing callers did not all have to be
+    rewritten at once, and named in `docs/limitations.md` so the shortcut is not invisible.
+    """
+
+    return AuditEvent(
+        tenant_id=tenant_id,
+        delegation_id=delegation_id,
+        correlation_id=correlation_id or uuid4(),
+        event_kind=kind,
+        payload=payload,
+    )
+
+
 async def grant_root(
     session: AsyncSession,
     *,
@@ -55,6 +81,7 @@ async def grant_root(
     principal_actor_id: str,
     delegate_actor_id: str,
     bounds: Bounds,
+    correlation_id: UUID | None = None,
 ) -> Delegation:
     """Cut the first hop directly from a policy, on behalf of the human principal.
 
@@ -90,6 +117,25 @@ async def grant_root(
     )
     session.add(root)
     await session.flush()
+    session.add(
+        _evidence(
+            tenant_id=tenant_id,
+            delegation_id=root.id,
+            correlation_id=correlation_id,
+            kind="delegation_granted",
+            payload={
+                "depth": 0,
+                "root_actor_id": principal_actor_id,
+                "delegate_actor_id": delegate_actor_id,
+                "budget_minor": bounds.budget_minor,
+                "max_amount_minor": bounds.max_amount_minor,
+                "allowed_skus": list(bounds.allowed_skus),
+                "purpose": bounds.purpose,
+                "policy_version": policy.version,
+            },
+        )
+    )
+    await session.flush()
     return root
 
 
@@ -101,6 +147,7 @@ async def grant(
     delegator_actor_id: str,
     delegate_actor_id: str,
     bounds: Bounds,
+    correlation_id: UUID | None = None,
 ) -> Delegation:
     """Delegate part of an existing hop onward.
 
@@ -155,6 +202,26 @@ async def grant(
     )
     session.add(child)
     await session.flush()
+    session.add(
+        _evidence(
+            tenant_id=tenant_id,
+            delegation_id=child.id,
+            correlation_id=correlation_id,
+            kind="delegation_granted",
+            payload={
+                "depth": child.depth,
+                "parent_id": str(parent_id),
+                "root_actor_id": parent.root_actor_id,
+                "delegator_actor_id": delegator_actor_id,
+                "delegate_actor_id": delegate_actor_id,
+                "budget_minor": bounds.budget_minor,
+                "max_amount_minor": bounds.max_amount_minor,
+                "allowed_skus": list(bounds.allowed_skus),
+                "purpose": bounds.purpose,
+            },
+        )
+    )
+    await session.flush()
     return child
 
 
@@ -195,6 +262,7 @@ async def revoke(
     tenant_id: UUID,
     delegation_id: UUID,
     at: datetime | None = None,
+    correlation_id: UUID | None = None,
 ) -> None:
     """Revoke one hop. Everything below it dies with it, without being touched.
 
@@ -215,6 +283,17 @@ async def revoke(
     if int(getattr(revoked, "rowcount", 0)) != 1:
         raise DelegationRefused("DELEGATION_ALREADY_REVOKED")
 
+    session.add(
+        _evidence(
+            tenant_id=tenant_id,
+            delegation_id=delegation_id,
+            correlation_id=correlation_id,
+            kind="delegation_revoked",
+            payload={"delegation_id": str(delegation_id)},
+        )
+    )
+    await session.flush()
+
 
 async def spend(
     session: AsyncSession,
@@ -225,6 +304,7 @@ async def spend(
     sku: str,
     reference: UUID,
     as_of: datetime | None = None,
+    correlation_id: UUID | None = None,
 ) -> None:
     """Spend against a hop, after every hop above it has agreed.
 
@@ -319,6 +399,23 @@ async def spend(
         )
         if int(getattr(claimed, "rowcount", 0)) != 1:
             raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED")
+
+        session.add(
+            _evidence(
+                tenant_id=tenant_id,
+                delegation_id=delegation_id,
+                correlation_id=correlation_id,
+                kind="delegation_spent",
+                payload={
+                    "reference": str(reference),
+                    "amount_minor": amount_minor,
+                    "sku": sku,
+                    "chain": [str(hop.id) for hop in chain],
+                    "root_actor_id": chain[0].root_actor_id,
+                },
+            )
+        )
+        await session.flush()
     except BaseException:
         await savepoint.rollback()
         raise
@@ -331,6 +428,7 @@ async def release(
     tenant_id: UUID,
     reference: UUID,
     at: datetime | None = None,
+    correlation_id: UUID | None = None,
 ) -> None:
     """Give back a spend whose payment did not happen.
 
@@ -362,3 +460,14 @@ async def release(
     )
     if int(getattr(given_back, "rowcount", 0)) != 1:
         raise DelegationRefused("DELEGATION_NOT_FOUND")
+
+    session.add(
+        _evidence(
+            tenant_id=tenant_id,
+            delegation_id=delegation_id,
+            correlation_id=correlation_id,
+            kind="delegation_released",
+            payload={"reference": str(reference), "amount_minor": amount_minor},
+        )
+    )
+    await session.flush()

@@ -151,6 +151,9 @@ async def _cleanup(session_factory: async_sessionmaker[AsyncSession], tenant_id:
         Tenant,
     )
     async with session_factory() as session:
+        # Audit events now name the hop they evidence, so they go before it - and the hops have to
+        # go before the tenant, which the loop below deletes last.
+        await session.execute(delete(AuditEvent).where(AuditEvent.tenant_id == tenant_id))
         # Ledger rows reference the hop they were spent against, so they go before it.
         await session.execute(delete(DelegationSpend).where(DelegationSpend.tenant_id == tenant_id))
         # Delegations point at their parent with RESTRICT, so a single bulk delete can reach a

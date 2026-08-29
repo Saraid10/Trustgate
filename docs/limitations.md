@@ -180,9 +180,11 @@ What is not attempted:
 - **A spend's `reference` has no foreign key.** Integration will pass the payment request it is
   authorizing, but nothing here checks that the reference names a real one - deliberately, while
   this module is not yet wired into the payment graph. That check belongs in the wiring.
-- **Nothing is written to the audit trail.** Grants, revocations, spends, and releases leave no
-  `AuditEvent`, while every other part of this project records what it did and why. This is the
-  largest inconsistency in the feature and the next thing to fix.
+- **`correlation_id` is optional and should not be.** Integration passes the correlation of the
+  payment being authorized, which is what joins a delegation's evidence to the payment timeline it
+  belongs to. A caller that omits it gets a fresh one and an event that is recorded but not joined.
+  Optional so that existing callers did not all have to be rewritten at once; named here so the
+  shortcut is not invisible.
 
 ## Deliberately deferred
 
@@ -214,7 +216,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **31 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **33 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

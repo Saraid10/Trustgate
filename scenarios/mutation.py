@@ -409,6 +409,26 @@ MUTATIONS: tuple[Mutation, ...] = (
             "tests/test_delegation.py::test_a_refused_spend_leaves_no_ledger_row_behind",
         ),
     ),
+    Mutation(
+        name="delegation-spend-is-evidenced",
+        invariant="A spend that moves budget records that it did.",
+        path="delegation/chain.py",
+        original='                kind="delegation_spent",\n',
+        mutated='                kind="delegation_considered",\n',
+        guarding_tests=(
+            "tests/test_delegation.py::test_every_delegation_operation_leaves_evidence",
+        ),
+    ),
+    Mutation(
+        name="delegation-evidence-names-the-whole-chain",
+        invariant="A spend's evidence names every hop that authorized it, not just the leaf.",
+        path="delegation/chain.py",
+        original='                    "chain": [str(hop.id) for hop in chain],\n',
+        mutated='                    "chain": [str(delegation_id)],\n',
+        guarding_tests=(
+            "tests/test_delegation.py::test_a_spend_records_the_chain_that_authorized_it",
+        ),
+    ),
 )
 
 

@@ -227,6 +227,8 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `delegation-spend-idempotent` | Spending twice under one reference charges the chain once. |
 | `delegation-release-only-once` | A spend given back once cannot be given back again. |
 | `delegation-refused-spend-releases-its-reference` | A refused spend does not burn the reference it was refused under. |
+| `delegation-spend-is-evidenced` | A spend that moves budget records that it did. |
+| `delegation-evidence-names-the-whole-chain` | A spend's evidence names every hop that authorized it, not just the leaf. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires
