@@ -6,6 +6,7 @@ from api.routes import (
     checkout_authorities,
     checkout_page,
     console,
+    delegations,
     evidence,
     internal_policies,
     payment_requests,
@@ -20,6 +21,7 @@ app.include_router(checkout_authorities.router)
 app.include_router(evidence.router)
 app.include_router(checkout_page.router)
 app.include_router(approvals.router)
+app.include_router(delegations.router)
 app.include_router(internal_policies.router)
 app.include_router(razorpay.router)
 app.include_router(webhooks.router)

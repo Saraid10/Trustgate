@@ -263,6 +263,7 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `authorization-claims-both-budgets-or-neither` | A payment refused after one budget moved gives it back before it is recorded. |
 | `delegated-budget-returns-when-a-payment-dies` | A payment that never happens returns its delegated budget, on every path. |
 | `delegation-consulted-during-authorization` | A payment by an actor holding a delegation is checked against it. |
+| `delegation-chain-reads-fresh` | A chain read after a grant reports the allocation the grant just took. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

@@ -195,12 +195,11 @@ What is not attempted:
   whole subtree, so a correct reclaim has to walk every descendant, total what they have actually
   spent, and do it without racing a spend already in flight. Conservative and lossy was preferred
   to clever and wrong, and this is the note saying so rather than leaving it to be discovered.
-- **There is no API for granting or revoking a delegation.** Authorization consults one, and
-  `spend`/`release` run from the payment path with the payment's own correlation id - but a chain
-  is created from Python, by `python -m agent.delegate` or the staging command. That is partly
-  deliberate: an agent that can mint its own authority is the thing this project exists to prevent,
-  so any future route has to decide who may grant, not just who may spend. Until it exists, a
-  delegation cannot be managed by anything but an operator with a shell.
+- **Granting is gated by a shared token, not by an identity.** `/api/v1/delegations` requires the
+  approver token, the same one the approvals route uses, so an agent cannot mint its own authority
+  and the MCP surface still offers no way to try. What the token does not do is say *which* human
+  granted a chain: everyone holding it is the same principal, and it neither expires nor rotates.
+  The chain records `root_actor_id` from configuration, which is a name, not a proof.
 - **A delegation is found by actor id, and an actor id is a string.** `active_delegation_for`
   matches on `delegate_actor_id`, so the chain that governs a payment is chosen by the same
   unauthenticated identity as everything else here. The enforcement is real; what it is bound to
@@ -245,7 +244,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **36 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **37 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

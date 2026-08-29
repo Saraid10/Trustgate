@@ -461,6 +461,17 @@ MUTATIONS: tuple[Mutation, ...] = (
             "::test_a_payment_over_the_delegation_is_denied_and_moves_neither_budget",
         ),
     ),
+    Mutation(
+        name="delegation-chain-reads-fresh",
+        invariant="A chain read after a grant reports the allocation the grant just took.",
+        path="delegation/chain.py",
+        original="                .execution_options(populate_existing=True)\n",
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegation_api.py"
+            "::test_a_child_narrows_and_the_chain_comes_back_root_first",
+        ),
+    ),
 )
 
 

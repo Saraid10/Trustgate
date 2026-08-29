@@ -285,7 +285,22 @@ async def resolve_chain(
     )
     walk = leaf.union_all(parent)
 
-    rows = (await session.execute(select(Delegation).from_statement(select(walk)))).scalars().all()
+    # populate_existing, for the reason `models.locking.locked` uses it. `delegation_attenuates`
+    # updates a parent's allocation from inside the insert that creates its child, so a parent
+    # already in the identity map is stale the moment a hop is granted below it - and a chain read
+    # afterwards would report the allocation it had before, which is the number a caller is asking
+    # about. Same fault as the row lock that returned a cached row; different place.
+    rows = (
+        (
+            await session.execute(
+                select(Delegation)
+                .from_statement(select(walk))
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
     chain = sorted(rows, key=lambda hop: hop.depth)
     if not chain:
         raise DelegationRefused("DELEGATION_NOT_FOUND")
