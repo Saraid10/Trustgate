@@ -347,6 +347,31 @@ MUTATIONS: tuple[Mutation, ...] = (
         mutated="",
         guarding_tests=("tests/test_delegation.py::test_an_expired_hop_stops_the_branch_below_it",),
     ),
+    Mutation(
+        name="delegation-positive-amount",
+        invariant="A spend moves budget one way; a negative amount cannot refund it.",
+        path="delegation/chain.py",
+        original=(
+            "    if amount_minor <= 0:\n"
+            "        # A negative spend is a refund nobody authorized: it passes every upper bound "
+            "and the\n"
+            "        # atomic claim subtracts from `spent_minor`, handing budget back.\n"
+            '        raise DelegationRefused("DELEGATION_AMOUNT_NOT_POSITIVE")\n\n'
+        ),
+        mutated="",
+        guarding_tests=("tests/test_delegation.py::test_a_spend_must_be_a_positive_amount",),
+    ),
+    Mutation(
+        name="delegation-chain-locked-before-trusted",
+        invariant="A spend holds every hop above it, so a revoke cannot land mid-decision.",
+        path="delegation/chain.py",
+        original="                locked(\n",
+        mutated="                (\n",
+        guarding_tests=(
+            "tests/test_concurrency.py"
+            "::test_a_revoke_cannot_land_between_validating_a_chain_and_spending_it",
+        ),
+    ),
 )
 
 

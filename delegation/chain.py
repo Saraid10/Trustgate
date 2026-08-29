@@ -21,6 +21,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.domain import Delegation, SpendingPolicy
+from models.locking import locked
 
 MAX_DEPTH = 8
 """Mirrors `ck_delegation_depth_bounded`. A chain nobody can enumerate is a chain nobody audits."""
@@ -59,6 +60,8 @@ async def grant_root(
     A root cannot exceed the policy it is cut from; below it the trigger takes over.
     """
 
+    if bounds.budget_minor <= 0:
+        raise DelegationRefused("DELEGATION_BUDGET_NOT_POSITIVE")
     if bounds.budget_minor > policy.max_daily_spend_minor:
         raise DelegationRefused("DELEGATION_EXCEEDS_POLICY_DAILY_LIMIT")
     if bounds.max_amount_minor > policy.max_amount_minor:
@@ -103,6 +106,11 @@ async def grant(
     The parent's allocation is claimed before the child exists. Two siblings racing for the same
     remaining budget both issue this update, and only one of them can find the room.
     """
+
+    if bounds.budget_minor <= 0:
+        # Every bound below is an upper bound, so a negative budget satisfies all of them and the
+        # allocation claim then credits the parent on the way past.
+        raise DelegationRefused("DELEGATION_BUDGET_NOT_POSITIVE")
 
     parent = await session.scalar(
         select(Delegation).where(Delegation.tenant_id == tenant_id, Delegation.id == parent_id)
@@ -222,8 +230,33 @@ async def spend(
     boolean spends money it was told it could not.
     """
 
+    if amount_minor <= 0:
+        # A negative spend is a refund nobody authorized: it passes every upper bound and the
+        # atomic claim subtracts from `spent_minor`, handing budget back.
+        raise DelegationRefused("DELEGATION_AMOUNT_NOT_POSITIVE")
+
     now = as_of or datetime.now(UTC)
     chain = await resolve_chain(session, tenant_id=tenant_id, delegation_id=delegation_id)
+
+    # Validating an ancestor by reading it, then claiming from the leaf, leaves a gap a concurrent
+    # revoke fits through: the claim below re-checks `revoked_at` on the leaf and on nothing above
+    # it. Locking the whole chain closes the gap. Root first, because two spends sharing ancestors
+    # that lock in opposite orders deadlock.
+    chain = sorted(
+        (
+            await session.scalars(
+                locked(
+                    select(Delegation)
+                    .where(
+                        Delegation.tenant_id == tenant_id,
+                        Delegation.id.in_([hop.id for hop in chain]),
+                    )
+                    .order_by(Delegation.depth)
+                )
+            )
+        ).all(),
+        key=lambda hop: hop.depth,
+    )
 
     current = await session.scalar(
         select(SpendingPolicy).where(

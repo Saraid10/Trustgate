@@ -222,6 +222,8 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `delegation-chain-payment-cap` | A spend is bound by the narrowest per-payment cap anywhere above it. |
 | `delegation-scope-narrowing` | A purpose narrowed at one hop stays narrowed at every hop below it. |
 | `delegation-hop-expiry` | An expired hop stops the branch below it. |
+| `delegation-positive-amount` | A spend moves budget one way; a negative amount cannot refund it. |
+| `delegation-chain-locked-before-trusted` | A spend holds every hop above it, so a revoke cannot land mid-decision. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

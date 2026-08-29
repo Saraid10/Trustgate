@@ -8,7 +8,8 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from api.routes.checkout_authorities import (
@@ -17,7 +18,7 @@ from api.routes.checkout_authorities import (
     consume_checkout_authority,
     issue_checkout_authority,
 )
-from delegation.chain import MAX_DEPTH, Bounds, DelegationRefused, grant, grant_root
+from delegation.chain import MAX_DEPTH, Bounds, DelegationRefused, grant, grant_root, spend
 from models.domain import (
     Approval,
     AuditEvent,
@@ -647,6 +648,94 @@ async def test_sibling_delegation_race_grants_only_one_final_child() -> None:
             )
         assert allocated == 60
         assert children == 1
+    finally:
+        await _cleanup(sessions, data.tenant_id)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_revoke_cannot_land_between_validating_a_chain_and_spending_it() -> None:
+    """A spend in flight holds its whole chain, ancestors included.
+
+    Validating an ancestor by reading it and then claiming from the leaf leaves a gap: the claim
+    re-checks the leaf and nothing above it, so a revoke committed in between is not seen and the
+    spend goes through under authority that no longer exists. The chain is locked instead.
+
+    Driven by making the revoke prove it is blocked rather than by racing and hoping: the second
+    session asks for a lock with a short timeout, and being refused is the evidence.
+    """
+
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    data = await _seed(sessions, state="AUTHORIZED")
+    try:
+        async with sessions() as setup:
+            policy = await setup.scalar(
+                select(SpendingPolicy).where(SpendingPolicy.id == data.policy_id)
+            )
+            assert policy is not None
+            bounds = Bounds(
+                budget_minor=100,
+                max_amount_minor=100,
+                allowed_skus=("CLOUD-STARTER",),
+                purpose="revoke race",
+                expires_at=policy.expiry,
+            )
+            root = await grant_root(
+                setup,
+                tenant_id=data.tenant_id,
+                policy=policy,
+                principal_actor_id="race-principal",
+                delegate_actor_id="race-agent",
+                bounds=bounds,
+            )
+            child = await grant(
+                setup,
+                tenant_id=data.tenant_id,
+                parent_id=root.id,
+                delegator_actor_id="race-agent",
+                delegate_actor_id="race-sub-agent",
+                bounds=Bounds(
+                    budget_minor=50,
+                    max_amount_minor=50,
+                    allowed_skus=("CLOUD-STARTER",),
+                    purpose="revoke race",
+                    expires_at=policy.expiry,
+                ),
+            )
+            root_id, child_id = root.id, child.id
+            await setup.commit()
+
+        async with sessions() as spender, sessions() as revoker:
+            await spender.execute(text("BEGIN"))
+            await spend(
+                spender,
+                tenant_id=data.tenant_id,
+                delegation_id=child_id,
+                amount_minor=10,
+                sku="CLOUD-STARTER",
+            )
+
+            # The spend has not committed. Revoking the root must wait for it.
+            await revoker.execute(text("SET LOCAL lock_timeout = '400ms'"))
+            with pytest.raises(DBAPIError) as blocked:
+                await revoker.execute(
+                    update(Delegation)
+                    .where(Delegation.tenant_id == data.tenant_id, Delegation.id == root_id)
+                    .values(revoked_at=datetime.now(UTC))
+                )
+            assert "lock" in str(blocked.value).casefold(), (
+                "the revoke was not blocked, so the spend never held its ancestors"
+            )
+
+            await revoker.rollback()
+            await spender.commit()
+
+        async with sessions() as check:
+            spent = await check.scalar(
+                select(Delegation.spent_minor).where(Delegation.id == child_id)
+            )
+        assert spent == 10
     finally:
         await _cleanup(sessions, data.tenant_id)
         await engine.dispose()

@@ -575,3 +575,66 @@ async def test_a_successful_spend_is_recorded_against_the_hop_that_made_it(
     )
     assert spent == 7_000
     assert root_spent == 0, "the leaf spent it, not the root"
+
+
+# --- what integration will hand it -----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amount", [-100, 0], ids=["negative", "zero"])
+async def test_a_spend_must_be_a_positive_amount(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData, amount: int
+) -> None:
+    """A negative spend is a refund nobody authorized.
+
+    Every bound here is an upper bound, so a negative amount passes all of them and the atomic
+    claim then subtracts from `spent_minor`, handing budget back. Nothing in this module is the
+    right place to decide that a caller meant it.
+    """
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    await spend(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        delegation_id=root.id,
+        amount_minor=10_000,
+        sku="CLOUD-STARTER",
+        as_of=NOW,
+    )
+
+    with pytest.raises(DelegationRefused) as refused:
+        await spend(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            delegation_id=root.id,
+            amount_minor=amount,
+            sku="CLOUD-STARTER",
+            as_of=NOW,
+        )
+
+    assert refused.value.reason == "DELEGATION_AMOUNT_NOT_POSITIVE"
+    still_spent = await async_session.scalar(
+        select(Delegation.spent_minor).where(Delegation.id == root.id)
+    )
+    assert still_spent == 10_000, "the refused spend moved the budget anyway"
+
+
+@pytest.mark.asyncio
+async def test_a_grant_must_carry_a_positive_budget(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """A negative child budget would credit its parent's allocation on the way past."""
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+
+    with pytest.raises(DelegationRefused) as refused:
+        await grant(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            parent_id=root.id,
+            delegator_actor_id="agent-a",
+            delegate_actor_id="agent-b",
+            bounds=_bounds(budget=-10_000),
+        )
+
+    assert refused.value.reason == "DELEGATION_BUDGET_NOT_POSITIVE"
