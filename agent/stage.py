@@ -41,6 +41,7 @@ from models.domain import (
     CheckoutAuthority,
     DailySpendReservation,
     Delegation,
+    DelegationSpend,
     Merchant,
     Payment,
     PaymentRequest,
@@ -126,6 +127,10 @@ async def reset_demo_tenant(session: AsyncSession) -> None:
 
     for model in _TRANSACTIONAL:
         await session.execute(delete(model).where(model.tenant_id == DEMO_TENANT_ID))
+    # Ledger rows reference the hop they were spent against, so they go before it.
+    await session.execute(
+        delete(DelegationSpend).where(DelegationSpend.tenant_id == DEMO_TENANT_ID)
+    )
     # Delegations point at their parent with RESTRICT, so the deepest hop has to go first.
     for depth in range(MAX_DEPTH, -1, -1):
         await session.execute(

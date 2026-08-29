@@ -217,6 +217,50 @@ class Delegation(Base):
     )
 
 
+class DelegationSpend(Base):
+    """One spend against a hop, recorded so it can be repeated safely and undone.
+
+    `spent_minor` on its own is a counter, and a counter cannot answer the two questions an
+    authorization path asks. It cannot say whether this spend already happened - so a retried
+    request charges twice - and it cannot say what to give back when the payment it paid for is
+    later denied, so the budget leaks. A daily spend reservation already has a release path; this
+    is the same idea with a row per spend instead of a total per day.
+
+    `reference` is the caller's idempotency key. Integration passes the payment request it is
+    authorizing; nothing here interprets it, and there is deliberately no foreign key to the
+    payment graph while this module is not yet wired into it.
+    """
+
+    __tablename__ = "delegation_spend"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "reference", name="uq_delegation_spend_reference"),
+        ForeignKeyConstraint(
+            ["tenant_id", "delegation_id"],
+            ["delegation.tenant_id", "delegation.id"],
+            name="fk_delegation_spend_delegation_tenant",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("amount_minor > 0", name="ck_delegation_spend_amount_positive"),
+        CheckConstraint(
+            "released_at IS NULL OR released_at >= created_at",
+            name="ck_delegation_spend_release_after_creation",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("tenant.id", ondelete="RESTRICT"), nullable=False
+    )
+    delegation_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    reference: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    sku: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class PaymentRequest(Base):
     __tablename__ = "payment_request"
     __table_args__ = (

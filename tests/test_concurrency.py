@@ -27,6 +27,7 @@ from models.domain import (
     CheckoutAuthority,
     DailySpendReservation,
     Delegation,
+    DelegationSpend,
     Merchant,
     Payment,
     PaymentRequest,
@@ -150,6 +151,8 @@ async def _cleanup(session_factory: async_sessionmaker[AsyncSession], tenant_id:
         Tenant,
     )
     async with session_factory() as session:
+        # Ledger rows reference the hop they were spent against, so they go before it.
+        await session.execute(delete(DelegationSpend).where(DelegationSpend.tenant_id == tenant_id))
         # Delegations point at their parent with RESTRICT, so a single bulk delete can reach a
         # parent before its children. Deepest hop first is the only order that always works.
         for depth in range(MAX_DEPTH, -1, -1):
@@ -713,6 +716,7 @@ async def test_a_revoke_cannot_land_between_validating_a_chain_and_spending_it()
                 tenant_id=data.tenant_id,
                 delegation_id=child_id,
                 amount_minor=10,
+                reference=uuid4(),
                 sku="CLOUD-STARTER",
             )
 

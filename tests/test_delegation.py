@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 from fixtures import FixtureData
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,11 +25,12 @@ from delegation.chain import (
     DelegationRefused,
     grant,
     grant_root,
+    release,
     resolve_chain,
     revoke,
     spend,
 )
-from models.domain import Delegation, SpendingPolicy
+from models.domain import Delegation, DelegationSpend, SpendingPolicy
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
 """Pinned, for the reason the daily-spend race test is pinned: a clock read is not a fixture."""
@@ -145,6 +146,7 @@ async def test_a_node_cannot_spend_what_it_has_already_promised_downward(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=root.id,
             amount_minor=20_000,
+            reference=uuid4(),
             sku="CLOUD-STARTER",
             as_of=NOW,
         )
@@ -338,6 +340,7 @@ async def test_revoking_an_ancestor_stops_a_descendant_that_was_never_touched(
         tenant_id=seeded_fixture_data.tenant_a.id,
         delegation_id=grandchild.id,
         amount_minor=1_000,
+        reference=uuid4(),
         sku="CLOUD-STARTER",
         as_of=NOW,
     )
@@ -350,6 +353,7 @@ async def test_revoking_an_ancestor_stops_a_descendant_that_was_never_touched(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=grandchild.id,
             amount_minor=1_000,
+            reference=uuid4(),
             sku="CLOUD-STARTER",
             as_of=NOW,
         )
@@ -391,6 +395,7 @@ async def test_a_hop_is_bound_by_the_narrowest_cap_above_it(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=grandchild.id,
             amount_minor=9_000,
+            reference=uuid4(),
             sku="CLOUD-STARTER",
             as_of=NOW,
         )
@@ -420,6 +425,7 @@ async def test_a_purpose_narrowed_at_one_hop_stays_narrowed_below_it(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=child.id,
             amount_minor=1_000,
+            reference=uuid4(),
             sku="CLOUD-TEAM",
             as_of=NOW,
         )
@@ -447,6 +453,7 @@ async def test_an_expired_hop_stops_the_branch_below_it(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=child.id,
             amount_minor=1_000,
+            reference=uuid4(),
             sku="CLOUD-STARTER",
             as_of=NOW + timedelta(days=3),
         )
@@ -510,6 +517,7 @@ async def test_a_chain_dies_when_the_policy_it_was_cut_from_is_superseded(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=root.id,
             amount_minor=1_000,
+            reference=uuid4(),
             sku="CLOUD-STARTER",
             as_of=NOW,
         )
@@ -563,6 +571,7 @@ async def test_a_successful_spend_is_recorded_against_the_hop_that_made_it(
         tenant_id=seeded_fixture_data.tenant_a.id,
         delegation_id=child.id,
         amount_minor=7_000,
+        reference=uuid4(),
         sku="CLOUD-STARTER",
         as_of=NOW,
     )
@@ -598,6 +607,7 @@ async def test_a_spend_must_be_a_positive_amount(
         tenant_id=seeded_fixture_data.tenant_a.id,
         delegation_id=root.id,
         amount_minor=10_000,
+        reference=uuid4(),
         sku="CLOUD-STARTER",
         as_of=NOW,
     )
@@ -608,6 +618,7 @@ async def test_a_spend_must_be_a_positive_amount(
             tenant_id=seeded_fixture_data.tenant_a.id,
             delegation_id=root.id,
             amount_minor=amount,
+            reference=uuid4(),
             sku="CLOUD-STARTER",
             as_of=NOW,
         )
@@ -638,3 +649,143 @@ async def test_a_grant_must_carry_a_positive_budget(
         )
 
     assert refused.value.reason == "DELEGATION_BUDGET_NOT_POSITIVE"
+
+
+# --- idempotency and release ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spending_twice_under_one_reference_charges_once(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """An authorization path that retries must not charge the chain twice.
+
+    A retry is not an error and must not look like one: the second call returns exactly as the
+    first did, and the budget moves once.
+    """
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    reference = uuid4()
+
+    for _ in range(3):
+        await spend(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            delegation_id=root.id,
+            amount_minor=10_000,
+            sku="CLOUD-STARTER",
+            reference=reference,
+            as_of=NOW,
+        )
+
+    spent = await async_session.scalar(
+        select(Delegation.spent_minor).where(Delegation.id == root.id)
+    )
+    ledger = await async_session.scalar(
+        select(func.count())
+        .select_from(DelegationSpend)
+        .where(DelegationSpend.reference == reference)
+    )
+    assert spent == 10_000, "a retry charged the chain again"
+    assert ledger == 1
+
+
+@pytest.mark.asyncio
+async def test_a_released_spend_returns_the_budget_to_the_hop(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Budget held for a payment that never happened has to come back."""
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    reference = uuid4()
+    await spend(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        delegation_id=root.id,
+        amount_minor=30_000,
+        sku="CLOUD-STARTER",
+        reference=reference,
+        as_of=NOW,
+    )
+
+    await release(async_session, tenant_id=seeded_fixture_data.tenant_a.id, reference=reference)
+
+    spent = await async_session.scalar(
+        select(Delegation.spent_minor).where(Delegation.id == root.id)
+    )
+    assert spent == 0
+
+
+@pytest.mark.asyncio
+async def test_a_spend_cannot_be_released_twice(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Otherwise a chain grows every time a release is retried."""
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    reference = uuid4()
+    await spend(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        delegation_id=root.id,
+        amount_minor=30_000,
+        sku="CLOUD-STARTER",
+        reference=reference,
+        as_of=NOW,
+    )
+    await release(async_session, tenant_id=seeded_fixture_data.tenant_a.id, reference=reference)
+
+    with pytest.raises(DelegationRefused) as refused:
+        await release(async_session, tenant_id=seeded_fixture_data.tenant_a.id, reference=reference)
+
+    assert refused.value.reason == "DELEGATION_SPEND_NOT_RELEASABLE"
+    spent = await async_session.scalar(
+        select(Delegation.spent_minor).where(Delegation.id == root.id)
+    )
+    assert spent == 0, "a second release credited the hop again"
+
+
+@pytest.mark.asyncio
+async def test_releasing_a_reference_that_never_spent_is_refused(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    await _root(async_session, seeded_fixture_data, budget=50_000)
+
+    with pytest.raises(DelegationRefused) as refused:
+        await release(async_session, tenant_id=seeded_fixture_data.tenant_a.id, reference=uuid4())
+
+    assert refused.value.reason == "DELEGATION_SPEND_NOT_RELEASABLE"
+
+
+@pytest.mark.asyncio
+async def test_a_refused_spend_leaves_no_ledger_row_behind(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The ledger row is written before the claim, so a refusal has to take it back.
+
+    A caller that catches the refusal and carries on in the same transaction would otherwise have
+    burned the reference: the retry would find a conflict and report success for a spend that
+    never happened.
+    """
+
+    root = await _root(async_session, seeded_fixture_data, budget=10_000)
+    reference = uuid4()
+
+    with pytest.raises(DelegationRefused) as refused:
+        await spend(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            delegation_id=root.id,
+            amount_minor=99_000,
+            sku="CLOUD-STARTER",
+            reference=reference,
+            as_of=NOW,
+        )
+    assert refused.value.reason == "DELEGATION_BUDGET_EXHAUSTED"
+
+    orphan = await async_session.scalar(
+        select(func.count())
+        .select_from(DelegationSpend)
+        .where(DelegationSpend.reference == reference)
+    )
+    assert orphan == 0, "the refused spend burned its reference"

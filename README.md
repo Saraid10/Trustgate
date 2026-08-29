@@ -224,6 +224,9 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `delegation-hop-expiry` | An expired hop stops the branch below it. |
 | `delegation-positive-amount` | A spend moves budget one way; a negative amount cannot refund it. |
 | `delegation-chain-locked-before-trusted` | A spend holds every hop above it, so a revoke cannot land mid-decision. |
+| `delegation-spend-idempotent` | Spending twice under one reference charges the chain once. |
+| `delegation-release-only-once` | A spend given back once cannot be given back again. |
+| `delegation-refused-spend-releases-its-reference` | A refused spend does not burn the reference it was refused under. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

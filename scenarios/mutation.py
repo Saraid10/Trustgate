@@ -287,10 +287,12 @@ MUTATIONS: tuple[Mutation, ...] = (
         invariant="A hop cannot spend budget it has already promised to the hops below it.",
         path="delegation/chain.py",
         original=(
-            "            Delegation.allocated_minor + Delegation.spent_minor + amount_minor\n"
-            "            <= Delegation.budget_minor,\n"
+            "                Delegation.allocated_minor + Delegation.spent_minor + amount_minor\n"
+            "                <= Delegation.budget_minor,\n"
         ),
-        mutated="            Delegation.spent_minor + amount_minor <= Delegation.budget_minor,\n",
+        mutated=(
+            "                Delegation.spent_minor + amount_minor <= Delegation.budget_minor,\n"
+        ),
         guarding_tests=(
             "tests/test_delegation.py"
             "::test_a_node_cannot_spend_what_it_has_already_promised_downward",
@@ -370,6 +372,41 @@ MUTATIONS: tuple[Mutation, ...] = (
         guarding_tests=(
             "tests/test_concurrency.py"
             "::test_a_revoke_cannot_land_between_validating_a_chain_and_spending_it",
+        ),
+    ),
+    Mutation(
+        name="delegation-spend-idempotent",
+        invariant="Spending twice under one reference charges the chain once.",
+        path="delegation/chain.py",
+        original=(
+            "        if recorded is None:\n"
+            "            # This reference has already been spent. A retry must not charge again, "
+            "and must not\n"
+            "            # look different to the caller from the attempt that worked.\n"
+            "            await savepoint.commit()\n"
+            "            return\n"
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegation.py::test_spending_twice_under_one_reference_charges_once",
+        ),
+    ),
+    Mutation(
+        name="delegation-release-only-once",
+        invariant="A spend given back once cannot be given back again.",
+        path="delegation/chain.py",
+        original="                DelegationSpend.released_at.is_(None),\n",
+        mutated="",
+        guarding_tests=("tests/test_delegation.py::test_a_spend_cannot_be_released_twice",),
+    ),
+    Mutation(
+        name="delegation-refused-spend-releases-its-reference",
+        invariant="A refused spend does not burn the reference it was refused under.",
+        path="delegation/chain.py",
+        original="        await savepoint.rollback()\n        raise\n",
+        mutated="        await savepoint.commit()\n        raise\n",
+        guarding_tests=(
+            "tests/test_delegation.py::test_a_refused_spend_leaves_no_ledger_row_behind",
         ),
     ),
 )

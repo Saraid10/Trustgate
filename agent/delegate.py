@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +34,7 @@ from delegation.chain import (
     revoke,
     spend,
 )
-from models.domain import Delegation, SpendingPolicy
+from models.domain import Delegation, DelegationSpend, SpendingPolicy
 
 PRINCIPAL = "finance-lead@demo"
 BUYER = "demo-buyer-agent"
@@ -65,6 +65,9 @@ class Demonstration:
 async def _clear(session: AsyncSession) -> None:
     """Deepest hop first: a delegation points at its parent with RESTRICT."""
 
+    await session.execute(
+        delete(DelegationSpend).where(DelegationSpend.tenant_id == DEMO_TENANT_ID)
+    )
     for depth in range(MAX_DEPTH, -1, -1):
         await session.execute(
             delete(Delegation).where(
@@ -176,6 +179,7 @@ async def demonstrate(session: AsyncSession) -> Demonstration:
         delegation_id=renewals_id,
         amount_minor=40_000,
         sku=STARTER_SKU,
+        reference=uuid4(),
     )
     await session.flush()
     await _print_tree(session, renewals_id)
@@ -190,6 +194,7 @@ async def demonstrate(session: AsyncSession) -> Demonstration:
             delegation_id=renewals_id,
             amount_minor=10_000,
             sku=TEAM_SKU,
+            reference=uuid4(),
         )
         await attempt.commit()
         scope_refusal = None
@@ -262,6 +267,7 @@ async def demonstrate(session: AsyncSession) -> Demonstration:
             delegation_id=renewals_id,
             amount_minor=1_000,
             sku=STARTER_SKU,
+            reference=uuid4(),
         )
         await attempt.commit()
         revocation_refusal = None

@@ -18,9 +18,10 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.domain import Delegation, SpendingPolicy
+from models.domain import Delegation, DelegationSpend, SpendingPolicy
 from models.locking import locked
 
 MAX_DEPTH = 8
@@ -222,9 +223,12 @@ async def spend(
     delegation_id: UUID,
     amount_minor: int,
     sku: str,
+    reference: UUID,
     as_of: datetime | None = None,
 ) -> None:
     """Spend against a hop, after every hop above it has agreed.
+
+    `reference` is the caller's idempotency key: spending twice under one reference charges once.
 
     Raises rather than returning a flag: a refusal here has a reason, and a caller that ignores a
     boolean spends money it was told it could not.
@@ -277,16 +281,84 @@ async def spend(
         if sku not in hop.allowed_skus:
             raise DelegationRefused("DELEGATION_SKU_OUT_OF_SCOPE")
 
-    claimed = await session.execute(
-        update(Delegation)
-        .where(
-            Delegation.tenant_id == tenant_id,
-            Delegation.id == delegation_id,
-            Delegation.revoked_at.is_(None),
-            Delegation.allocated_minor + Delegation.spent_minor + amount_minor
-            <= Delegation.budget_minor,
+    # The ledger row goes in first, and conflicts if this reference has been spent before. Doing
+    # the claim first and recording afterwards would let two concurrent retries both claim before
+    # either discovered the other. Both statements sit in a savepoint so a refused spend cannot
+    # leave the row behind for a caller that carries on in the same transaction.
+    savepoint = await session.begin_nested()
+    try:
+        recorded = await session.scalar(
+            insert(DelegationSpend)
+            .values(
+                id=uuid4(),
+                tenant_id=tenant_id,
+                delegation_id=delegation_id,
+                reference=reference,
+                amount_minor=amount_minor,
+                sku=sku,
+            )
+            .on_conflict_do_nothing(constraint="uq_delegation_spend_reference")
+            .returning(DelegationSpend.id)
         )
-        .values(spent_minor=Delegation.spent_minor + amount_minor)
+        if recorded is None:
+            # This reference has already been spent. A retry must not charge again, and must not
+            # look different to the caller from the attempt that worked.
+            await savepoint.commit()
+            return
+
+        claimed = await session.execute(
+            update(Delegation)
+            .where(
+                Delegation.tenant_id == tenant_id,
+                Delegation.id == delegation_id,
+                Delegation.revoked_at.is_(None),
+                Delegation.allocated_minor + Delegation.spent_minor + amount_minor
+                <= Delegation.budget_minor,
+            )
+            .values(spent_minor=Delegation.spent_minor + amount_minor)
+        )
+        if int(getattr(claimed, "rowcount", 0)) != 1:
+            raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED")
+    except BaseException:
+        await savepoint.rollback()
+        raise
+    await savepoint.commit()
+
+
+async def release(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    reference: UUID,
+    at: datetime | None = None,
+) -> None:
+    """Give back a spend whose payment did not happen.
+
+    Budget reserved for a payment that is later denied, cancelled, or failed has to return, or a
+    chain silently shrinks every time something goes wrong. `released_at IS NULL` in the predicate
+    is what stops the same spend being given back twice.
+    """
+
+    released = (
+        await session.execute(
+            update(DelegationSpend)
+            .where(
+                DelegationSpend.tenant_id == tenant_id,
+                DelegationSpend.reference == reference,
+                DelegationSpend.released_at.is_(None),
+            )
+            .values(released_at=at or datetime.now(UTC))
+            .returning(DelegationSpend.delegation_id, DelegationSpend.amount_minor)
+        )
+    ).first()
+    if released is None:
+        raise DelegationRefused("DELEGATION_SPEND_NOT_RELEASABLE")
+
+    delegation_id, amount_minor = released
+    given_back = await session.execute(
+        update(Delegation)
+        .where(Delegation.tenant_id == tenant_id, Delegation.id == delegation_id)
+        .values(spent_minor=Delegation.spent_minor - amount_minor)
     )
-    if int(getattr(claimed, "rowcount", 0)) != 1:
-        raise DelegationRefused("DELEGATION_BUDGET_EXHAUSTED")
+    if int(getattr(given_back, "rowcount", 0)) != 1:
+        raise DelegationRefused("DELEGATION_NOT_FOUND")
