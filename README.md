@@ -21,10 +21,10 @@ source files and a trigger already applied to a schema would not notice.
 - Tenant-scoped policy, human approval, a one-time checkout authority, and verified provider events
   bound every payment action.
 - Authority delegated onward narrows at every hop, and the hops below a node cannot, between them,
-  promise more than that node holds. **In the delegation engine, which no payment consults yet** -
-  see [Delegated Authority](#delegated-authority-and-why-a-budget-is-not-a-capability).
+  promise more than that node holds.
+- An actor holding a delegation has its purchases checked against the whole chain during
+  authorization, and the budget returns if the payment never happens.
 - Revoking one hop ends every branch below it without touching a descendant or recalling anything.
-  Same engine, same boundary.
 - Unsafe attempts are rejected before a provider order can be created and leave an auditable trace.
 
 ## How AI Is Used Here
@@ -152,12 +152,23 @@ The claim is true now because the trigger does the work, and
 The mutation named `delegation-aggregate-partition` is the evidence that this is a real distinction
 and not a stylistic one: delete the aggregate claim and every other delegation test still passes.
 
-**This engine is not wired into the payment path.** No payment request, approval, checkout
-authority, or provider call consults a delegation today, and spending a chain to zero does not stop
-the same actor paying through the ordinary flow. What is built is the mechanism and its proof;
-`python -m agent.delegate` exercises it directly rather than through a purchase. Read the claim as
-"here is delegation, working and tested", not as "Razorpay payments execute under delegated
-authority". `docs/limitations.md` lists what wiring it would still require.
+**This is wired into authorization, and the boundary that remains is narrower than it was.** A
+purchase by an actor holding a delegation is checked against every hop above it before the payment
+request is recorded, the delegation is debited in the same savepoint as the daily reservation, and
+the budget comes back on the same condition that already returns the daily one - DENIED, EXPIRED,
+FAILED, CANCELLED. An actor holding no delegation takes the path it took before any of this
+existed, which is what makes the rest of the suite the regression net for the wiring.
+
+Two budgets refusing separately is where this could have leaked, and the savepoint is why it does
+not: claiming the daily reservation and then refusing on the delegation would leave it moved for a
+payment that never happens, and the release path only fires on a transition out of a holding state,
+which a request refused at authorization never enters. Doing the delegation first only mirrors the
+leak. Either both hold or neither does.
+
+What is still missing is a way to *create* one over HTTP. A delegation is granted and revoked from
+Python today - `python -m agent.delegate` and the staging command - and there is deliberately no
+tool letting an agent mint its own authority. `docs/limitations.md` has the rest, including the
+largest: nothing proves the actor spending is the actor the delegation was granted to.
 
 A second property falls out of the same design. A hop carries no signature; its authority is
 re-derived from its whole chain, against live policy, every time it is spent. Revoking any link is
@@ -249,6 +260,9 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `delegation-spend-is-evidenced` | A spend that moves budget records that it did. |
 | `delegation-evidence-names-the-whole-chain` | A spend's evidence names every hop that authorized it, not just the leaf. |
 | `delegation-reference-belongs-to-one-request` | A reused reference carrying different details is refused, not reported as done. |
+| `authorization-claims-both-budgets-or-neither` | A payment refused after one budget moved gives it back before it is recorded. |
+| `delegated-budget-returns-when-a-payment-dies` | A payment that never happens returns its delegated budget, on every path. |
+| `delegation-consulted-during-authorization` | A payment by an actor holding a delegation is checked against it. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

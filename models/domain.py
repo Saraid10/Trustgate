@@ -200,6 +200,13 @@ class Delegation(Base):
             postgresql_where=text("revoked_at IS NULL"),
         ),
         Index("ix_delegation_parent", "tenant_id", "parent_id"),
+        Index(
+            "uq_delegation_one_live_per_actor",
+            "tenant_id",
+            "delegate_actor_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)

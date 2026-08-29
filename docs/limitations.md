@@ -195,10 +195,20 @@ What is not attempted:
   whole subtree, so a correct reclaim has to walk every descendant, total what they have actually
   spent, and do it without racing a spend already in flight. Conservative and lossy was preferred
   to clever and wrong, and this is the note saying so rather than leaving it to be discovered.
-- **Nothing reaches the payment path.** No payment request, approval, checkout authority, provider
-  call, MCP tool, or state transition consults a delegation. Wiring it would need HTTP routes, a
-  decision that agents may spend under a delegation but never mint one, and `spend`/`release`
-  called from the authorization path with the payment's own correlation id.
+- **There is no API for granting or revoking a delegation.** Authorization consults one, and
+  `spend`/`release` run from the payment path with the payment's own correlation id - but a chain
+  is created from Python, by `python -m agent.delegate` or the staging command. That is partly
+  deliberate: an agent that can mint its own authority is the thing this project exists to prevent,
+  so any future route has to decide who may grant, not just who may spend. Until it exists, a
+  delegation cannot be managed by anything but an operator with a shell.
+- **A delegation is found by actor id, and an actor id is a string.** `active_delegation_for`
+  matches on `delegate_actor_id`, so the chain that governs a payment is chosen by the same
+  unauthenticated identity as everything else here. The enforcement is real; what it is bound to
+  is not yet.
+- **A request with no catalog SKU is refused outright when the actor holds a delegation.** A
+  delegation is scoped by SKU, so there is nothing to check an unscoped purchase against and it
+  fails closed. That is the right default and it does mean a delegated actor cannot use the
+  non-catalog path at all.
 - **`correlation_id` is optional and should not be.** Integration passes the correlation of the
   payment being authorized, which is what joins a delegation's evidence to the payment timeline it
   belongs to. A caller that omits it gets a fresh one and an event that is recorded but not joined.
@@ -235,7 +245,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **33 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **36 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

@@ -239,6 +239,32 @@ async def grant(
     return child
 
 
+async def active_delegation_for(
+    session: AsyncSession, *, tenant_id: UUID, actor_id: str, as_of: datetime | None = None
+) -> Delegation | None:
+    """The live delegation an actor holds, or None if it holds none.
+
+    None is not a refusal. An actor with no delegation is an actor the chain has nothing to say
+    about, and authorization treats it exactly as it did before this existed - which is what makes
+    the whole suite a regression net for the wiring.
+
+    `uq_delegation_one_live_per_actor` is why this returns one thing rather than picking from
+    several. Expiry is filtered here rather than in the index because an index predicate cannot
+    reference the current time.
+    """
+
+    now = as_of or datetime.now(UTC)
+    held: Delegation | None = await session.scalar(
+        select(Delegation).where(
+            Delegation.tenant_id == tenant_id,
+            Delegation.delegate_actor_id == actor_id,
+            Delegation.revoked_at.is_(None),
+            Delegation.expires_at > now,
+        )
+    )
+    return held
+
+
 async def resolve_chain(
     session: AsyncSession, *, tenant_id: UUID, delegation_id: UUID
 ) -> list[Delegation]:

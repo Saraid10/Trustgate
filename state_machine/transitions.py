@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from delegation.chain import DelegationRefused, release
 from models.domain import Approval, AuditEvent, Payment, PaymentRequest, SpendingPolicy
 from models.locking import locked
 from policy_engine.evaluate import release_daily_spend
@@ -221,6 +222,9 @@ async def transition(
             locked_payment.state = to_state
             if to_state in BUDGET_RELEASING_STATES and from_state in RESERVATION_HOLDING_STATES:
                 await _release_reserved_budget(session, payment=locked_payment)
+                await _release_delegated_budget(
+                    session, payment=locked_payment, correlation_id=correlation_id
+                )
             _write_audit_event(
                 session,
                 locked_payment,
@@ -240,6 +244,35 @@ async def transition(
     if locked_payment is None:
         raise RuntimeError("Payment row lock unexpectedly returned no payment.")
     return locked_payment
+
+
+async def _release_delegated_budget(
+    session: AsyncSession,
+    *,
+    payment: Payment,
+    correlation_id: UUID,
+) -> None:
+    """Give back the delegation budget this payment's request claimed, if it claimed any.
+
+    Hung on the same condition as the daily reservation deliberately. That condition already
+    enumerates every state a payment dies in - DENIED, EXPIRED, FAILED, CANCELLED - and is itself
+    covered by a mutation, so this inherits the enumeration rather than repeating it and getting a
+    state wrong later.
+
+    A request that never spent a delegation has nothing to return, and `release` says so by
+    refusing. That is the ordinary case here, not an error: most payments have no delegation at
+    all. It is caught and dropped for that reason, and for no other.
+    """
+
+    try:
+        await release(
+            session,
+            tenant_id=payment.tenant_id,
+            reference=payment.payment_request_id,
+            correlation_id=correlation_id,
+        )
+    except DelegationRefused:
+        return
 
 
 async def _release_reserved_budget(session: AsyncSession, *, payment: Payment) -> None:

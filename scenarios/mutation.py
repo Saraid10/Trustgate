@@ -424,6 +424,43 @@ MUTATIONS: tuple[Mutation, ...] = (
             "tests/test_delegation.py::test_reusing_a_reference_for_a_different_spend_is_refused",
         ),
     ),
+    Mutation(
+        name="authorization-claims-both-budgets-or-neither",
+        invariant="A payment refused after one budget moved gives it back before it is recorded.",
+        path="api/routes/payment_requests.py",
+        original="                await claim.rollback()\n",
+        mutated="                await claim.commit()\n",
+        guarding_tests=(
+            "tests/test_delegated_payments.py"
+            "::test_a_payment_over_the_delegation_is_denied_and_moves_neither_budget",
+        ),
+    ),
+    Mutation(
+        name="delegated-budget-returns-when-a-payment-dies",
+        invariant="A payment that never happens returns its delegated budget, on every path.",
+        path="state_machine/transitions.py",
+        original=(
+            "                await _release_delegated_budget(\n"
+            "                    session, payment=locked_payment, correlation_id=correlation_id\n"
+            "                )\n"
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegated_payments.py"
+            "::test_a_payment_that_fails_returns_the_delegation_budget",
+        ),
+    ),
+    Mutation(
+        name="delegation-consulted-during-authorization",
+        invariant="A payment by an actor holding a delegation is checked against it.",
+        path="api/routes/payment_requests.py",
+        original="                elif held is not None:\n",
+        mutated="                elif False:\n",
+        guarding_tests=(
+            "tests/test_delegated_payments.py"
+            "::test_a_payment_over_the_delegation_is_denied_and_moves_neither_budget",
+        ),
+    ),
 )
 
 

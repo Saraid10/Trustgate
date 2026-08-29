@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_session
 from api.dependencies import require_tenant
+from delegation.chain import DelegationRefused, active_delegation_for, spend
 from models.domain import (
     AuditEvent,
     AuthorizationDecision,
@@ -21,7 +22,11 @@ from models.domain import (
     PaymentRequest,
     Tenant,
 )
-from policy_engine.evaluate import PolicyDecision, evaluate_payment_request, reserve_daily_spend
+from policy_engine.evaluate import (
+    PolicyDecision,
+    evaluate_payment_request,
+    reserve_daily_spend,
+)
 from schemas.domain import PaymentRequestCreate, PaymentRequestDecision
 from state_machine.transitions import transition
 
@@ -172,22 +177,62 @@ async def create_payment_request_for_context(
             amount_minor=request.amount_minor,
             currency=request.currency,
         )
+        correlation_id = uuid4()
+        # Generated before either budget is claimed. The delegation spend is keyed by the request
+        # it authorizes, so a retry charges once and the evidence joins this payment's timeline.
+        request_id = uuid4()
+
+        held = await active_delegation_for(session, tenant_id=tenant.id, actor_id=request.actor_id)
+
         if result.decision != "DENY":
-            reserved = await reserve_daily_spend(
-                session,
-                tenant_id=tenant.id,
-                actor_id=request.actor_id,
-                amount_minor=request.amount_minor,
-                policy_version=result.policy_version,
-            )
-            if not reserved:
-                result = PolicyDecision(
-                    decision="DENY",
-                    reasons=["DAILY_LIMIT_EXCEEDED"],
+            # Both budgets inside one savepoint. Claiming the daily reservation and then refusing
+            # on the delegation would leave it moved for a payment that never happens - and the
+            # release path fires on a transition out of a holding state, which a request denied
+            # here never enters. Doing the delegation first only mirrors the leak. Either both
+            # hold or neither does, and the order stops mattering.
+            claim = await session.begin_nested()
+            refusal: str | None = None
+            try:
+                reserved = await reserve_daily_spend(
+                    session,
+                    tenant_id=tenant.id,
+                    actor_id=request.actor_id,
+                    amount_minor=request.amount_minor,
                     policy_version=result.policy_version,
                 )
-        correlation_id = uuid4()
+                if not reserved:
+                    refusal = "DAILY_LIMIT_EXCEEDED"
+                elif held is not None:
+                    sku = catalog_context.catalog_sku if catalog_context else None
+                    if sku is None:
+                        # A delegation is scoped by SKU. A request carrying none cannot be checked
+                        # against that scope, so it is refused rather than quietly exempted.
+                        refusal = "DELEGATION_REQUIRES_A_CATALOG_SKU"
+                    else:
+                        await spend(
+                            session,
+                            tenant_id=tenant.id,
+                            delegation_id=held.id,
+                            amount_minor=request.amount_minor,
+                            sku=sku,
+                            reference=request_id,
+                            correlation_id=correlation_id,
+                        )
+            except DelegationRefused as refused:
+                refusal = refused.reason
+
+            if refusal is None:
+                await claim.commit()
+            else:
+                await claim.rollback()
+                result = PolicyDecision(
+                    decision="DENY",
+                    reasons=[refusal],
+                    policy_version=result.policy_version,
+                )
+
         payment_request = PaymentRequest(
+            id=request_id,
             tenant_id=tenant.id,
             catalog_item_id=catalog_context.catalog_item_id if catalog_context else None,
             catalog_sku=catalog_context.catalog_sku if catalog_context else None,
