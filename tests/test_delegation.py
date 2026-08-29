@@ -942,3 +942,145 @@ async def test_a_correlation_id_is_carried_into_the_evidence(
     )
     assert event is not None
     assert event.correlation_id == correlation_id
+
+
+# --- bounds are fixed at grant ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("budget_minor", 999_999),
+        ("max_amount_minor", 999_999),
+        ("allowed_skus", ["CLOUD-STARTER", "CLOUD-TEAM", "ANYTHING"]),
+        ("expires_at", datetime(2036, 1, 1, tzinfo=UTC)),
+        ("depth", 5),
+        ("delegate_actor_id", "someone-else"),
+        ("root_actor_id", "someone-else"),
+        ("policy_version", 99),
+        ("purpose", "something else entirely"),
+    ],
+    ids=[
+        "budget",
+        "payment-cap",
+        "scope",
+        "expiry",
+        "depth",
+        "delegate",
+        "root-principal",
+        "policy-version",
+        "purpose",
+    ],
+)
+async def test_a_granted_hop_cannot_be_widened_afterwards(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData, column: str, value: object
+) -> None:
+    """The attenuation trigger fires on INSERT, which left UPDATE wide open.
+
+    A hop granted a budget of 1,000 was rewritten to 999,999 with its scope widened and its expiry
+    pushed a decade out, and nothing objected - so a child could be widened past its parent and
+    take the chain with it. Bounds are fixed at grant now.
+    """
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+
+    with pytest.raises(DBAPIError) as raised:
+        async with async_session.begin_nested():
+            await async_session.execute(
+                update(Delegation).where(Delegation.id == root.id).values(**{column: value})
+            )
+
+    assert "bounds are fixed at grant" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_a_revoked_hop_cannot_be_revived(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Authority coming back from the dead is worse than authority that never ended."""
+
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    await revoke(async_session, tenant_id=seeded_fixture_data.tenant_a.id, delegation_id=root.id)
+
+    with pytest.raises(DBAPIError) as raised:
+        async with async_session.begin_nested():
+            await async_session.execute(
+                update(Delegation).where(Delegation.id == root.id).values(revoked_at=None)
+            )
+
+    assert "cannot be revived" in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_the_things_a_hop_does_after_being_granted_still_change(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Freezing the bounds must not freeze the accounting, or nothing works at all."""
+
+    tenant_id = seeded_fixture_data.tenant_a.id
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    await grant(
+        async_session,
+        tenant_id=tenant_id,
+        parent_id=root.id,
+        delegator_actor_id="agent-a",
+        delegate_actor_id="agent-b",
+        bounds=_bounds(budget=20_000),
+    )
+    await spend(
+        async_session,
+        tenant_id=tenant_id,
+        delegation_id=root.id,
+        amount_minor=1_000,
+        sku="CLOUD-STARTER",
+        reference=uuid4(),
+        as_of=NOW,
+    )
+    await revoke(async_session, tenant_id=tenant_id, delegation_id=root.id)
+
+    row = await async_session.scalar(select(Delegation).where(Delegation.id == root.id))
+    assert row is not None
+    assert (row.allocated_minor, row.spent_minor) == (20_000, 1_000)
+    assert row.revoked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_reusing_a_reference_for_a_different_spend_is_refused(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """An idempotency key belongs to one request, not to whatever arrives with it next.
+
+    Treating a mismatched reuse as a successful retry reports success for a spend that never
+    happened, and the caller has no way to tell.
+    """
+
+    tenant_id = seeded_fixture_data.tenant_a.id
+    root = await _root(async_session, seeded_fixture_data, budget=50_000)
+    reference = uuid4()
+    await spend(
+        async_session,
+        tenant_id=tenant_id,
+        delegation_id=root.id,
+        amount_minor=5_000,
+        sku="CLOUD-STARTER",
+        reference=reference,
+        as_of=NOW,
+    )
+
+    with pytest.raises(DelegationRefused) as refused:
+        await spend(
+            async_session,
+            tenant_id=tenant_id,
+            delegation_id=root.id,
+            amount_minor=9_000,
+            sku="CLOUD-STARTER",
+            reference=reference,
+            as_of=NOW,
+        )
+
+    assert refused.value.reason == "DELEGATION_REFERENCE_REUSED"
+    spent = await async_session.scalar(
+        select(Delegation.spent_minor).where(Delegation.id == root.id)
+    )
+    assert spent == 5_000

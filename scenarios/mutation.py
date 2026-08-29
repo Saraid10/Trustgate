@@ -378,14 +378,7 @@ MUTATIONS: tuple[Mutation, ...] = (
         name="delegation-spend-idempotent",
         invariant="Spending twice under one reference charges the chain once.",
         path="delegation/chain.py",
-        original=(
-            "        if recorded is None:\n"
-            "            # This reference has already been spent. A retry must not charge again, "
-            "and must not\n"
-            "            # look different to the caller from the attempt that worked.\n"
-            "            await savepoint.commit()\n"
-            "            return\n"
-        ),
+        original="            await savepoint.commit()\n            return\n",
         mutated="",
         guarding_tests=(
             "tests/test_delegation.py::test_spending_twice_under_one_reference_charges_once",
@@ -427,6 +420,16 @@ MUTATIONS: tuple[Mutation, ...] = (
         mutated='                    "chain": [str(delegation_id)],\n',
         guarding_tests=(
             "tests/test_delegation.py::test_a_spend_records_the_chain_that_authorized_it",
+        ),
+    ),
+    Mutation(
+        name="delegation-reference-belongs-to-one-request",
+        invariant="A reused reference carrying different details is refused, not reported as done.",
+        path="delegation/chain.py",
+        original='                raise DelegationRefused("DELEGATION_REFERENCE_REUSED")\n',
+        mutated="                pass\n",
+        guarding_tests=(
+            "tests/test_delegation.py::test_reusing_a_reference_for_a_different_spend_is_refused",
         ),
     ),
 )

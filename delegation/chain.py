@@ -38,7 +38,18 @@ class DelegationRefused(Exception):
 
 @dataclass(frozen=True)
 class Bounds:
-    """What a hop may do. Every field narrows or the trigger rejects the row."""
+    """What a hop may do, and one thing it merely says.
+
+    `budget_minor`, `max_amount_minor`, `expires_at`, and `allowed_skus` are enforced: the
+    `delegation_attenuates` trigger refuses a child that widens any of them, and
+    `delegation_bounds_are_frozen` refuses an update that widens them afterwards.
+
+    `purpose` is not enforced and is not a bound. It is free text with no narrowing relation - one
+    string is not "narrower" than another in any way a database can check - so a child may say
+    whatever it likes about why it exists without changing a single thing it can spend on. What
+    actually scopes a hop is `allowed_skus`. Purpose is recorded, immutable after grant, and
+    carried into the evidence; treat it as testimony rather than as a control.
+    """
 
     budget_minor: int
     max_amount_minor: int
@@ -381,8 +392,23 @@ async def spend(
             .returning(DelegationSpend.id)
         )
         if recorded is None:
-            # This reference has already been spent. A retry must not charge again, and must not
-            # look different to the caller from the attempt that worked.
+            # This reference has already been spent. A genuine retry must not charge again and
+            # must not look different to the caller from the attempt that worked - but a reference
+            # belongs to one request, not to whatever arrives carrying it next. Treating a
+            # mismatched reuse as a retry reports success for a spend that never happened.
+            existing = await session.scalar(
+                select(DelegationSpend).where(
+                    DelegationSpend.tenant_id == tenant_id,
+                    DelegationSpend.reference == reference,
+                )
+            )
+            if (
+                existing is None
+                or existing.delegation_id != delegation_id
+                or existing.amount_minor != amount_minor
+                or existing.sku != sku
+            ):
+                raise DelegationRefused("DELEGATION_REFERENCE_REUSED")
             await savepoint.commit()
             return
 

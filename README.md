@@ -139,6 +139,13 @@ wrong. `python -m agent.delegate` walks four hops and shows the sibling being re
 The mutation named `delegation-aggregate-partition` is the evidence that this is a real distinction
 and not a stylistic one: delete the aggregate claim and every other delegation test still passes.
 
+**This engine is not wired into the payment path.** No payment request, approval, checkout
+authority, or provider call consults a delegation today, and spending a chain to zero does not stop
+the same actor paying through the ordinary flow. What is built is the mechanism and its proof;
+`python -m agent.delegate` exercises it directly rather than through a purchase. Read the claim as
+"here is delegation, working and tested", not as "Razorpay payments execute under delegated
+authority". `docs/limitations.md` lists what wiring it would still require.
+
 A second property falls out of the same design. A hop carries no signature; its authority is
 re-derived from its whole chain, against live policy, every time it is spent. Revoking any link is
 already the end of the branch - no recall, no revocation list, and the descendant is never written
@@ -229,6 +236,7 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `delegation-refused-spend-releases-its-reference` | A refused spend does not burn the reference it was refused under. |
 | `delegation-spend-is-evidenced` | A spend that moves budget records that it did. |
 | `delegation-evidence-names-the-whole-chain` | A spend's evidence names every hop that authorized it, not just the leaf. |
+| `delegation-reference-belongs-to-one-request` | A reused reference carrying different details is refused, not reported as done. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

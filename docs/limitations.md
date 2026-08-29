@@ -180,6 +180,20 @@ What is not attempted:
 - **A spend's `reference` has no foreign key.** Integration will pass the payment request it is
   authorizing, but nothing here checks that the reference names a real one - deliberately, while
   this module is not yet wired into the payment graph. That check belongs in the wiring.
+- **`purpose` is evidence, not a bound.** It travels with a hop and is frozen after grant, but no
+  trigger and no spend check consults it, because free text has no narrowing relation a database
+  can enforce. `allowed_skus` is what actually scopes a hop. A child may rewrite its stated purpose
+  without changing anything it can spend on.
+- **Revoking a hop does not return its unspent budget to its parent.** The allocation stays
+  promised, so a tenant that grants and revokes repeatedly loses usable capacity until the hops
+  expire and are cleaned up. Reclaiming is deliberately not attempted: a revoked hop kills its
+  whole subtree, so a correct reclaim has to walk every descendant, total what they have actually
+  spent, and do it without racing a spend already in flight. Conservative and lossy was preferred
+  to clever and wrong, and this is the note saying so rather than leaving it to be discovered.
+- **Nothing reaches the payment path.** No payment request, approval, checkout authority, provider
+  call, MCP tool, or state transition consults a delegation. Wiring it would need HTTP routes, a
+  decision that agents may spend under a delegation but never mint one, and `spend`/`release`
+  called from the authorization path with the payment's own correlation id.
 - **`correlation_id` is optional and should not be.** Integration passes the correlation of the
   payment being authorized, which is what joins a delegation's evidence to the payment timeline it
   belongs to. A caller that omits it gets a fresh one and an event that is recorded but not joined.
@@ -216,7 +230,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **33 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **34 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on
