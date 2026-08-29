@@ -49,7 +49,7 @@ include = [
     "mcp_server*",
     "agent*",
     "scenarios*",
-    "console*",
+    "delegation*",
 ]
 
 [tool.pytest.ini_options]

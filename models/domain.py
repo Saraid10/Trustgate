@@ -191,6 +191,15 @@ class Delegation(Base):
             name="ck_delegation_revocation_after_creation",
         ),
         CheckConstraint("cardinality(allowed_skus) > 0", name="ck_delegation_scope_is_not_empty"),
+        # Declared here as well as in the migration: `alembic check` compares the database against
+        # this metadata, and an index the model does not know about reads as one to drop.
+        Index(
+            "ix_delegation_active_delegate",
+            "tenant_id",
+            "delegate_actor_id",
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+        Index("ix_delegation_parent", "tenant_id", "parent_id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -244,6 +253,12 @@ class DelegationSpend(Base):
         CheckConstraint(
             "released_at IS NULL OR released_at >= created_at",
             name="ck_delegation_spend_release_after_creation",
+        ),
+        Index(
+            "ix_delegation_spend_unreleased",
+            "tenant_id",
+            "delegation_id",
+            postgresql_where=text("released_at IS NULL"),
         ),
     )
 

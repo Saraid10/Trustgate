@@ -59,3 +59,37 @@ def test_the_configured_list_names_only_packages_that_exist() -> None:
     }
 
     assert not missing, f"[tool.mypy] packages names things that are not here: {sorted(missing)}"
+
+
+def _packaged_patterns() -> set[str]:
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    include = config["tool"]["setuptools"]["packages"]["find"]["include"]
+    return {pattern.removesuffix("*") for pattern in include}
+
+
+def test_every_shipped_package_is_in_the_distribution() -> None:
+    """A package missing here is missing from the wheel, and only from the wheel.
+
+    Editable installs and the Docker mount both put the source on the path regardless, so the
+    omission is invisible in development and total in a real install. `delegation` was absent while
+    every test passed against it.
+    """
+
+    missing = _packages_on_disk() - _packaged_patterns()
+
+    assert not missing, (
+        f"these packages ship but setuptools would not include them: {sorted(missing)}. "
+        "Add them to [tool.setuptools.packages.find] include in pyproject.toml."
+    )
+
+
+def test_the_distribution_list_names_only_packages_that_exist() -> None:
+    """The same staleness in the other direction.
+
+    `console*` sat in the list long after the package it named was gone. Harmless in itself, and
+    exactly the kind of entry that makes a list stop being read.
+    """
+
+    absent = {name for name in _packaged_patterns() if not (ROOT / name / "__init__.py").is_file()}
+
+    assert not absent, f"packaging names things that are not here: {sorted(absent)}"
