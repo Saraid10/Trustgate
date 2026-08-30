@@ -124,3 +124,48 @@ def test_the_recovery_table_covers_the_failure_that_actually_happened() -> None:
 
     assert "Docker Desktop stopped" in script
     assert "docker compose up -d" in script
+
+
+def test_the_spoken_counts_match_what_the_terminal_will_print() -> None:
+    """The one mistake in the closing beat a viewer can actually catch.
+
+    Beat 6 runs `make mutation` on screen and then says a number out loud. That number was written
+    when the registry held seventeen and was still there at thirty-seven, which would have put the
+    narration in direct contradiction with the terminal beside it.
+
+    Spelled out rather than numeric because that is how it is spoken.
+    """
+
+    from scenarios.mutation import MUTATIONS
+    from scenarios.tier_a import REGISTRY
+
+    spoken = {
+        16: "sixteen",
+        17: "seventeen",
+        18: "eighteen",
+        26: "twenty-six",
+        33: "thirty-three",
+        36: "thirty-six",
+        37: "thirty-seven",
+        38: "thirty-eight",
+        39: "thirty-nine",
+        40: "forty",
+    }
+    script = SCRIPT.read_text(encoding="utf-8").casefold()
+
+    mutations = spoken.get(len(MUTATIONS))
+    scenarios = spoken.get(len(REGISTRY))
+    assert mutations is not None, (
+        f"the registry holds {len(MUTATIONS)} mutations and this test has no word for it; "
+        "add it to `spoken` and update the script"
+    )
+    assert scenarios is not None, f"no word for {len(REGISTRY)} scenarios"
+
+    assert f"{mutations} deliberate breaks" in script, (
+        f"the script does not say '{mutations} deliberate breaks', but `make mutation` will print "
+        f"{len(MUTATIONS)}"
+    )
+    assert f"{scenarios} adversarial scenarios" in script, (
+        f"the script does not say '{scenarios} adversarial scenarios', but the registry holds "
+        f"{len(REGISTRY)}"
+    )
