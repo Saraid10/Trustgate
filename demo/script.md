@@ -220,10 +220,23 @@ When the revoked hop kills the leaf:
 > A signed token would have had to be hunted down and recalled - which is why revocation is on the
 > open-problems list for that whole family of designs.
 
-Do not claim this solves multi-agent delegation. It does not: there is no agent identity here, and
-no cross-tenant chain. `docs/limitations.md` says so and so should you.
+Then say the part that is easy to leave out, because it is the strongest thing here:
 
----
+> This is not a separate demo. That chain is checked inside the same authorization path that
+> refused the attack a minute ago. A purchase by an agent holding a delegation is measured against
+> every hop above it before the request is even recorded, the budget is taken in the same
+> transaction as the daily limit, and it comes back if the payment never happens.
+
+If asked how you know the two budgets cannot disagree:
+
+> Because a refusal on either one gives back both. That was the bug: reserving the daily budget and
+> then refusing on the delegation leaves the reservation moved for a payment that never happened,
+> and the release path only fires on a state transition a refused request never reaches. Both
+> claims are in one savepoint now. Three tests exist for that single property.
+
+Do not claim this solves multi-agent delegation. It does not: there is no agent identity here, so
+nothing proves the agent spending is the agent the chain was granted to, and there are no
+cross-tenant chains. `docs/limitations.md` says both and so should you.
 
 ---
 
