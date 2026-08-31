@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_session
@@ -258,6 +258,25 @@ async def create_payment_request_for_context(
         )
         session.add(payment_request)
         await session.flush()
+        if spent_delegation_id is not None:
+            # The spend's audit row could not carry this when it was written: the spend happens
+            # inside the budget savepoint, and the request it names does not exist until the flush
+            # above. Writing the foreign key then would have refused the insert.
+            #
+            # Narrow on purpose. This correlation was generated for this authorization and nothing
+            # else writes under it, so the update reaches exactly the events this spend produced -
+            # and `payment_request_id IS NULL` means a re-entry could not steal another purchase's
+            # evidence even if that stopped being true.
+            await session.execute(
+                update(AuditEvent)
+                .where(
+                    AuditEvent.tenant_id == tenant.id,
+                    AuditEvent.delegation_id == spent_delegation_id,
+                    AuditEvent.correlation_id == correlation_id,
+                    AuditEvent.payment_request_id.is_(None),
+                )
+                .values(payment_request_id=payment_request.id)
+            )
         payment = Payment(
             tenant_id=tenant.id,
             payment_request_id=payment_request.id,

@@ -155,6 +155,16 @@ def test_the_spoken_counts_match_what_the_terminal_will_print() -> None:
         43: "forty-three",
         44: "forty-four",
         45: "forty-five",
+        46: "forty-six",
+        47: "forty-seven",
+        48: "forty-eight",
+        49: "forty-nine",
+        50: "fifty",
+        51: "fifty-one",
+        52: "fifty-two",
+        53: "fifty-three",
+        54: "fifty-four",
+        55: "fifty-five",
     }
     script = SCRIPT.read_text(encoding="utf-8").casefold()
 

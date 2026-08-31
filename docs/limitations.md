@@ -262,7 +262,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **44 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **47 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

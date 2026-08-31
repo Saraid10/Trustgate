@@ -113,6 +113,44 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
             ]
         decision_body = _rows(pairs)
 
+    # Rendered inside stage two rather than as a fourth stage: a delegation is not a thing that
+    # happened after authorization, it is part of what authorized. Absent entirely when the request
+    # spent no delegation, so an empty block never suggests that authority was checked and found
+    # wanting when in fact none was involved.
+    delegation_body = ""
+    if evidence.delegation is not None:
+        held = evidence.delegation
+        currency = derived.currency
+        delegation_pairs = [
+            ("Granted by", f"<strong>{_text(held.root_actor_id)}</strong>"),
+            ("Chain", _text(f"{len(held.chain)} hop{'' if len(held.chain) == 1 else 's'}")),
+            ("Debited", _money(held.spent_minor, currency)),
+            ("Scope spent", f"<code>{_text(held.spent_sku)}</code>"),
+        ]
+        if held.released_at is not None:
+            delegation_pairs.append(("Returned", _text(held.released_at)))
+        if held.refusal_reason is not None:
+            delegation_pairs.append(
+                (
+                    "Refused at checkout",
+                    f"<strong class='verdict'>{_text(held.refusal_reason)}</strong>",
+                )
+            )
+        hops = "".join(
+            f"<li><span class='muted'>depth {_text(hop.depth)}</span> "
+            f"<code>{_text(hop.delegator_actor_id)}</code> &rarr; "
+            f"<code>{_text(hop.delegate_actor_id)}</code>"
+            f"<br><span class='muted'>{_money(hop.remaining_minor, currency)} left of "
+            f"{_money(hop.budget_minor, currency)}"
+            f"{' &middot; revoked' if hop.revoked_at is not None else ''}</span></li>"
+            for hop in held.chain
+        )
+        delegation_body = (
+            "<h3 class='block'>Delegated authority</h3>"
+            + _rows(delegation_pairs)
+            + f"<ul class='events'>{hops}</ul>"
+        )
+
     if evidence.provider_order is None:
         provider_body = (
             "<p class='empty'>No provider order exists for this request. "
@@ -154,7 +192,7 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
     stage_two = _stage(
         "2 · Derived and authorized",
         "Determined by TrustGate",
-        derived_body + decision_body,
+        derived_body + decision_body + delegation_body,
         tone=tone,
     )
     stage_three = _stage("3 · Provider outcome", "What Razorpay actually did", provider_body)
@@ -186,6 +224,8 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
   .k {{ color: #5e7477; }}
   .v {{ text-align: right; word-break: break-word; }}
   .verdict {{ letter-spacing: .04em; }}
+  .block {{ font-size: .82rem; margin: 1.1rem 0 .3rem; text-transform: uppercase;
+            letter-spacing: .06em; color: #5e7477; }}
   code {{ font-family: ui-monospace, monospace; font-size: .8rem; }}
   .empty {{ color: #5e7477; font-size: .83rem; margin: .6rem 0 0; }}
   .muted {{ color: #5e7477; }}

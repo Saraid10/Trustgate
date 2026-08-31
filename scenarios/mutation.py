@@ -575,6 +575,46 @@ MUTATIONS: tuple[Mutation, ...] = (
             "::test_revoking_another_tenants_delegation_is_not_found_not_already_revoked",
         ),
     ),
+    Mutation(
+        name="the-spend-joins-its-purchase",
+        invariant="A delegation spend is reachable from the payment request it paid for.",
+        path="api/routes/payment_requests.py",
+        original="        if spent_delegation_id is not None:\n",
+        mutated="        if False:\n",
+        guarding_tests=(
+            "tests/test_delegation_evidence.py::test_the_spend_joins_the_purchase_timeline",
+        ),
+    ),
+    Mutation(
+        name="the-release-joins-its-purchase",
+        invariant="A returned delegation budget is reachable from the purchase that returned it.",
+        path="state_machine/transitions.py",
+        # Carried with the comment above it, because the release and the audit write further down
+        # pass the same keyword and the anchor has to name one of them.
+        original=(
+            "            # holding it, which a caller releasing some other kind of reference"
+            " would not be.\n"
+            "            payment_request_id=payment.payment_request_id,\n"
+        ),
+        mutated=(
+            "            # holding it, which a caller releasing some other kind of reference"
+            " would not be.\n"
+        ),
+        guarding_tests=(
+            "tests/test_delegation_evidence.py::test_a_returned_budget_is_shown_as_returned",
+        ),
+    ),
+    Mutation(
+        name="evidence-names-the-delegated-authority",
+        invariant="A purchase made under a delegation says so in its evidence record.",
+        path="api/routes/evidence.py",
+        original="    if request.delegation_id is not None:\n",
+        mutated="    if False:\n",
+        guarding_tests=(
+            "tests/test_delegation_evidence.py"
+            "::test_the_evidence_names_the_human_the_authority_came_from",
+        ),
+    ),
 )
 
 

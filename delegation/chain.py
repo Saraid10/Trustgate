@@ -66,6 +66,7 @@ def _evidence(
     correlation_id: UUID | None,
     kind: str,
     payload: dict[str, object],
+    payment_request_id: UUID | None = None,
 ) -> AuditEvent:
     """One audit row for a delegation operation.
 
@@ -74,11 +75,18 @@ def _evidence(
     it belongs to; a caller that omits it gets a fresh one and an event that is recorded but not
     joined. Made optional rather than required so the existing callers did not all have to be
     rewritten at once, and named in `docs/limitations.md` so the shortcut is not invisible.
+
+    `payment_request_id` is the durable version of that join, and it is a real foreign key - which
+    is why it is passed rather than inferred from `reference`. A reference is any uuid the caller
+    chose to make a spend idempotent; `python -m agent.delegate` uses ones that name no payment at
+    all, and writing those into this column would refuse the insert. Only a caller that knows it is
+    holding a payment request passes it.
     """
 
     return AuditEvent(
         tenant_id=tenant_id,
         delegation_id=delegation_id,
+        payment_request_id=payment_request_id,
         correlation_id=correlation_id or uuid4(),
         event_kind=kind,
         payload=payload,
@@ -644,6 +652,7 @@ async def release(
     reference: UUID,
     at: datetime | None = None,
     correlation_id: UUID | None = None,
+    payment_request_id: UUID | None = None,
 ) -> None:
     """Give back a spend whose payment did not happen.
 
@@ -683,6 +692,7 @@ async def release(
             tenant_id=tenant_id,
             delegation_id=delegation_id,
             correlation_id=correlation_id,
+            payment_request_id=payment_request_id,
             kind="delegation_released",
             payload={"reference": str(reference), "amount_minor": amount_minor},
         )

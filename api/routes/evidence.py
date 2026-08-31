@@ -27,11 +27,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.database import get_session
 from api.dependencies import require_tenant
 from api.receipt import render_receipt
+from delegation.chain import DelegationRefused, resolve_chain
 from models.domain import (
     Approval,
     AuditEvent,
     AuthorizationDecision,
     CheckoutAuthority,
+    Delegation,
+    DelegationSpend,
     Payment,
     PaymentRequest,
     ProviderEvent,
@@ -44,6 +47,8 @@ from schemas.domain import (
     EvidenceAuditEntry,
     EvidenceAuthority,
     EvidenceDecision,
+    EvidenceDelegation,
+    EvidenceDelegationHop,
     EvidenceDerivedFacts,
     EvidencePayment,
     EvidencePolicy,
@@ -155,6 +160,45 @@ async def build_payment_request_evidence(
         )
     )
 
+    # The chain is read here rather than matched through the audit trail, because a hop's numbers
+    # move after the purchase - a later grant takes allocation, a later spend takes budget - and a
+    # receipt that showed the chain as it was would be a snapshot this project does not keep. Every
+    # other figure in this record is read live too.
+    delegation_chain: list[Delegation] = []
+    delegation_spend: DelegationSpend | None = None
+    if request.delegation_id is not None:
+        try:
+            delegation_chain = await resolve_chain(
+                session, tenant_id=tenant.id, delegation_id=request.delegation_id
+            )
+        except DelegationRefused:
+            # The foreign key says the hop is there, so this is a chain broken above it. Reporting
+            # no delegation section is wrong and raising loses the whole receipt; the audit trail
+            # below still carries the spend.
+            delegation_chain = []
+        delegation_spend = await session.scalar(
+            select(DelegationSpend).where(
+                DelegationSpend.tenant_id == tenant.id,
+                DelegationSpend.reference == request.id,
+            )
+        )
+
+    # A refusal recorded against the chain rather than against the policy. An authorization refused
+    # on a delegation never reaches here - it sets no `delegation_id`, and its reason is already in
+    # `decision.reasons` - so this is specifically the case where authority died between being
+    # granted and being spent.
+    delegation_refusal = next(
+        (
+            str(event.payload["reason"])
+            for event in reversed(audit_events)
+            if event.event_kind == "checkout_authority_rejected"
+            and event.delegation_id is not None
+            and isinstance(event.payload, dict)
+            and str(event.payload.get("reason", "")).startswith("DELEGATION_")
+        ),
+        None,
+    )
+
     return PaymentRequestEvidence(
         payment_request_id=request.id,
         tenant_id=tenant.id,
@@ -222,6 +266,35 @@ async def build_payment_request_evidence(
                 used_at=authority.used_at,
             )
             if authority is not None
+            else None
+        ),
+        delegation=(
+            EvidenceDelegation(
+                root_actor_id=delegation_chain[0].root_actor_id,
+                chain=[
+                    EvidenceDelegationHop(
+                        delegation_id=hop.id,
+                        depth=hop.depth,
+                        delegator_actor_id=hop.delegator_actor_id,
+                        delegate_actor_id=hop.delegate_actor_id,
+                        budget_minor=hop.budget_minor,
+                        allocated_minor=hop.allocated_minor,
+                        spent_minor=hop.spent_minor,
+                        remaining_minor=hop.budget_minor - hop.allocated_minor - hop.spent_minor,
+                        max_amount_minor=hop.max_amount_minor,
+                        allowed_skus=list(hop.allowed_skus),
+                        purpose=hop.purpose,
+                        expires_at=hop.expires_at,
+                        revoked_at=hop.revoked_at,
+                    )
+                    for hop in delegation_chain
+                ],
+                spent_minor=delegation_spend.amount_minor if delegation_spend else 0,
+                spent_sku=delegation_spend.sku if delegation_spend else None,
+                released_at=delegation_spend.released_at if delegation_spend else None,
+                refusal_reason=delegation_refusal,
+            )
+            if delegation_chain
             else None
         ),
         payment=(

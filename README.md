@@ -273,6 +273,9 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `expired-hop-stops-holding-its-actors-slot` | An actor whose delegation expired can be granted another one. |
 | `granting-cannot-silently-end-live-authority` | Making room for a grant never revokes a delegation that still works. |
 | `revoke-does-not-describe-another-tenants-row` | A revoke that matches nothing says which nothing, without leaking the other. |
+| `the-spend-joins-its-purchase` | A delegation spend is reachable from the payment request it paid for. |
+| `the-release-joins-its-purchase` | A returned delegation budget is reachable from the purchase that returned it. |
+| `evidence-names-the-delegated-authority` | A purchase made under a delegation says so in its evidence record. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

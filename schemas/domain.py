@@ -381,6 +381,48 @@ class EvidenceAuditEntry(BaseModel):
     created_at: datetime
 
 
+class EvidenceDelegationHop(BaseModel):
+    """One link of the authority this purchase ran under, as it stands now.
+
+    `remaining_minor` is a live number rather than a snapshot of the moment of purchase, like every
+    other figure in this record. The receipt says what the database holds when it is read.
+    """
+
+    delegation_id: UUID
+    depth: int
+    delegator_actor_id: str
+    delegate_actor_id: str
+    budget_minor: NonNegativeAmount
+    allocated_minor: NonNegativeAmount
+    spent_minor: NonNegativeAmount
+    remaining_minor: int
+    max_amount_minor: NonNegativeAmount
+    allowed_skus: list[str]
+    purpose: str
+    expires_at: datetime
+    revoked_at: datetime | None
+
+
+class EvidenceDelegation(BaseModel):
+    """The chain a purchase spent, root first, and the human at the top of it.
+
+    Present only when the request actually debited a delegation. An actor holding none takes the
+    path it always took, and this section is absent rather than empty - the difference between "no
+    delegation was involved" and "a delegation was involved and did nothing" is worth keeping.
+
+    `root_actor_id` is the accountability claim and the weakest link in it: it is the identity the
+    approver token was configured with, so it names a role rather than proving a person. That is
+    stated in `docs/limitations.md` and is why this says who the chain *records*, not who acted.
+    """
+
+    root_actor_id: str
+    chain: list[EvidenceDelegationHop]
+    spent_minor: NonNegativeAmount
+    spent_sku: str | None
+    released_at: datetime | None
+    refusal_reason: str | None
+
+
 class PaymentRequestEvidence(BaseModel):
     """A traceable record of one purchase attempt.
 
@@ -398,6 +440,7 @@ class PaymentRequestEvidence(BaseModel):
     decision: EvidenceDecision | None
     approval: EvidenceApproval | None
     authority: EvidenceAuthority | None
+    delegation: EvidenceDelegation | None
     payment: EvidencePayment | None
     provider_order: EvidenceProviderOrder | None
     provider_events: list[EvidenceProviderEvent]

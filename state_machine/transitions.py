@@ -270,6 +270,11 @@ async def _release_delegated_budget(
             tenant_id=payment.tenant_id,
             reference=payment.payment_request_id,
             correlation_id=correlation_id,
+            # The same uuid twice, and they are not the same fact. `reference` is the idempotency
+            # key the spend was recorded under; this is the foreign key that puts the release on
+            # the purchase's timeline. Passing it here is safe precisely because a payment is
+            # holding it, which a caller releasing some other kind of reference would not be.
+            payment_request_id=payment.payment_request_id,
         )
     except DelegationRefused:
         return
