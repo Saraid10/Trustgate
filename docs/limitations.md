@@ -177,9 +177,12 @@ What is not attempted:
 - **A revoked hop is not garbage collected.** Rows stay for the audit trail, so a long-lived tenant
   accumulates dead delegations with no retention policy.
 - **Budget is a single currency integer.** A chain cannot span currencies, and nothing converts.
-- **A spend's `reference` has no foreign key.** Integration will pass the payment request it is
-  authorizing, but nothing here checks that the reference names a real one - deliberately, while
-  this module is not yet wired into the payment graph. That check belongs in the wiring.
+- **A spend's `reference` has no foreign key.** Authorization passes the payment request it is
+  authorizing, but `delegation_spend.reference` is still a bare uuid and nothing checks that it
+  names a real one. What it no longer has to carry alone is the join: `payment_request.delegation_id`
+  is a real composite foreign key, added when checkout began re-asking the chain, so walking from a
+  payment to the authority it spent is a contract the database keeps. The reference remains the
+  idempotency key it always was.
 - **The mutation count went down by one, and the guarantee went up.** The sibling-budget
   aggregate used to be maintained in Python and covered by a mutation. It now lives in the
   `delegation_attenuates` trigger, where a mutation runner cannot reach it, and is covered by tests
@@ -200,6 +203,14 @@ What is not attempted:
   and the MCP surface still offers no way to try. What the token does not do is say *which* human
   granted a chain: everyone holding it is the same principal, and it neither expires nor rotates.
   The chain records `root_actor_id` from configuration, which is a name, not a proof.
+- **A refused consume does not return the budgets the payment is holding.** A chain revoked
+  between issuing a checkout authority and consuming it refuses the provider call, which is the
+  part that matters - no money moves. The daily reservation and the delegated budget stay held on
+  an AUTHORIZED payment that nothing sweeps. Releasing them there would mean writing inside the
+  function whose every write is undone by the rollback that carries its refusal out, and that
+  rollback is what makes a crash mid-consume fail closed. Issuing is where a dead chain cancels the
+  payment and returns both. Trading a guarantee about money for a guarantee about bookkeeping was
+  not worth it, and this is the note saying so.
 - **A delegation is found by actor id, and an actor id is a string.** `active_delegation_for`
   matches on `delegate_actor_id`, so the chain that governs a payment is chosen by the same
   unauthenticated identity as everything else here. The enforcement is real; what it is bound to
@@ -244,7 +255,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **37 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **41 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

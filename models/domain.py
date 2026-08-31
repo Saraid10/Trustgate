@@ -300,8 +300,15 @@ class PaymentRequest(Base):
             name="fk_payment_request_catalog_item_tenant",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "delegation_id"],
+            ["delegation.tenant_id", "delegation.id"],
+            name="fk_payment_request_delegation_tenant",
+            ondelete="RESTRICT",
+        ),
         Index("ix_payment_request_tenant_merchant", "tenant_id", "merchant_id"),
         Index("ix_payment_request_tenant_catalog_item", "tenant_id", "catalog_item_id"),
+        Index("ix_payment_request_tenant_delegation", "tenant_id", "delegation_id"),
         CheckConstraint("amount_minor >= 0", name="ck_payment_request_amount_nonnegative"),
         CheckConstraint(
             "(catalog_item_id IS NULL AND quantity IS NULL AND purpose IS NULL "
@@ -331,6 +338,11 @@ class PaymentRequest(Base):
     quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
     purpose: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="API")
+    # The chain this request actually spent, or None because most requests spend none. Written only
+    # where the spend succeeded, so its presence is the record that a delegation was debited - which
+    # is what lets checkout re-ask the chain later, and the receipt name the human at its root.
+    # `DelegationSpend.reference` carried this before and is an unconstrained string; this is a key.
+    delegation_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     request_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     amount_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)

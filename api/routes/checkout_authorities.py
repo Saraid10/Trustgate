@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_session
 from api.dependencies import require_tenant
+from delegation.chain import DelegationRefused, assert_chain_live
 from models.domain import (
     Approval,
     AuditEvent,
@@ -25,6 +26,7 @@ from models.domain import (
 )
 from models.locking import locked
 from schemas.domain import CheckoutAuthorityResponse
+from state_machine.transitions import transition
 
 router = APIRouter(prefix="/api/v1/checkout-authorities", tags=["checkout authorities"])
 _AUTHORITY_TTL = timedelta(minutes=15)
@@ -124,6 +126,23 @@ async def consume_checkout_authority(
             or _snapshot_hash(request, authority.policy_version) != authority.snapshot_hash
         ):
             raise CheckoutAuthorityUnavailableError("CHECKOUT_AUTHORITY_POLICY_DRIFT")
+        if request.delegation_id is not None:
+            # The last gate before a provider order exists. An authority issued while the chain was
+            # live can be consumed up to fifteen minutes later, and a human revoking inside that
+            # window means this money must not move.
+            #
+            # Refusing is all that happens here. The budgets this payment holds are not returned,
+            # because returning them means writing, and every write in this function is undone by
+            # the rollback that carries the raise out - `get_session` rolls the request back, which
+            # is the property that makes a crash mid-consume fail closed. Issuing is where a dead
+            # chain cancels the payment and releases both budgets; this is the narrower case of a
+            # chain that died after its authority was already in hand.
+            try:
+                await assert_chain_live(
+                    session, tenant_id=tenant_id, delegation_id=request.delegation_id
+                )
+            except DelegationRefused as refused:
+                raise CheckoutAuthorityUnavailableError(refused.reason) from refused
         authority.used_at = datetime.now(UTC)
         session.add(
             AuditEvent(
@@ -209,6 +228,44 @@ async def issue_checkout_authority(
                 )
             )
             return _rejection(reason, status.HTTP_409_CONFLICT)
+        if request.delegation_id is not None:
+            # Authorization asked this chain once, and a human can revoke between then and now.
+            # Issuing anyway would hand the provider adapter a permission slip for authority that
+            # had already been withdrawn - the one thing revocation is supposed to prevent.
+            try:
+                await assert_chain_live(
+                    session, tenant_id=tenant.id, delegation_id=request.delegation_id
+                )
+            except DelegationRefused as refused:
+                correlation_id = uuid4()
+                session.add(
+                    AuditEvent(
+                        tenant_id=tenant.id,
+                        payment_request_id=request.id,
+                        payment_id=payment.id,
+                        delegation_id=request.delegation_id,
+                        correlation_id=correlation_id,
+                        event_kind="checkout_authority_rejected",
+                        payload={
+                            "reason": refused.reason,
+                            "payment_request_id": str(request.id),
+                            "delegation_id": str(request.delegation_id),
+                        },
+                    )
+                )
+                # This payment is holding a daily reservation and a delegation debit for money that
+                # will now never move, and nothing sweeps a stranded AUTHORIZED payment. CANCELLED
+                # returns both, through the single path that already enumerates the states a
+                # payment dies in and is itself covered by a mutation - so this inherits that
+                # enumeration rather than growing a second copy of it here.
+                await transition(
+                    session,
+                    payment,
+                    "CANCELLED",
+                    reason=refused.reason,
+                    correlation_id=correlation_id,
+                )
+                return _rejection(refused.reason, status.HTTP_409_CONFLICT)
         if (
             request.catalog_item_id is None
             or request.catalog_sku is None

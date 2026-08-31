@@ -295,8 +295,8 @@ MUTATIONS: tuple[Mutation, ...] = (
         invariant="Revoking one hop stops every hop below it.",
         path="delegation/chain.py",
         original=(
-            "        if hop.revoked_at is not None:\n"
-            '            raise DelegationRefused("DELEGATION_REVOKED")\n'
+            "    if hop.revoked_at is not None:\n"
+            '        raise DelegationRefused("DELEGATION_REVOKED")\n'
         ),
         mutated="",
         guarding_tests=(
@@ -335,8 +335,7 @@ MUTATIONS: tuple[Mutation, ...] = (
         invariant="An expired hop stops the branch below it.",
         path="delegation/chain.py",
         original=(
-            "        if hop.expires_at <= now:\n"
-            '            raise DelegationRefused("DELEGATION_EXPIRED")\n'
+            '    if hop.expires_at <= now:\n        raise DelegationRefused("DELEGATION_EXPIRED")\n'
         ),
         mutated="",
         guarding_tests=("tests/test_delegation.py::test_an_expired_hop_stops_the_branch_below_it",),
@@ -470,6 +469,74 @@ MUTATIONS: tuple[Mutation, ...] = (
         guarding_tests=(
             "tests/test_delegation_api.py"
             "::test_a_child_narrows_and_the_chain_comes_back_root_first",
+        ),
+    ),
+    Mutation(
+        name="checkout-re-asks-the-chain-before-issuing",
+        invariant="A delegation revoked after authorization stops the checkout it authorized.",
+        path="api/routes/checkout_authorities.py",
+        original=(
+            "        if request.delegation_id is not None:\n"
+            "            # Authorization asked this chain once, and a human can revoke between"
+            " then and now.\n"
+        ),
+        mutated=(
+            "        if False:\n"
+            "            # Authorization asked this chain once, and a human can revoke between"
+            " then and now.\n"
+        ),
+        guarding_tests=(
+            "tests/test_delegation_through_checkout.py"
+            "::test_a_revoked_delegation_stops_the_checkout_it_had_already_authorized",
+        ),
+    ),
+    Mutation(
+        name="checkout-re-asks-the-chain-before-consuming",
+        invariant="A chain revoked while its authority was in hand refuses the provider call.",
+        path="api/routes/checkout_authorities.py",
+        original=(
+            "        if request.delegation_id is not None:\n"
+            "            # The last gate before a provider order exists. An authority issued"
+            " while the chain was\n"
+        ),
+        mutated=(
+            "        if False:\n"
+            "            # The last gate before a provider order exists. An authority issued"
+            " while the chain was\n"
+        ),
+        guarding_tests=(
+            "tests/test_delegation_through_checkout.py"
+            "::test_a_chain_revoked_after_its_authority_was_issued_refuses_the_consume",
+        ),
+    ),
+    Mutation(
+        name="blocked-checkout-returns-both-budgets",
+        invariant="A checkout blocked by a dead chain strands neither budget on the payment.",
+        path="api/routes/checkout_authorities.py",
+        original=(
+            "                await transition(\n"
+            "                    session,\n"
+            "                    payment,\n"
+            '                    "CANCELLED",\n'
+            "                    reason=refused.reason,\n"
+            "                    correlation_id=correlation_id,\n"
+            "                )\n"
+        ),
+        mutated="",
+        guarding_tests=(
+            "tests/test_delegation_through_checkout.py"
+            "::test_the_blocked_checkout_gives_back_both_budgets",
+        ),
+    ),
+    Mutation(
+        name="request-records-the-chain-it-spent",
+        invariant="A payment request names the delegation it debited, durably enough to re-ask.",
+        path="api/routes/payment_requests.py",
+        original="            delegation_id=spent_delegation_id,\n",
+        mutated="            delegation_id=None,\n",
+        guarding_tests=(
+            "tests/test_delegation_through_checkout.py"
+            "::test_the_request_records_the_chain_it_actually_spent",
         ),
     ),
 )

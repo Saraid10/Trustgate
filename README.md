@@ -24,7 +24,9 @@ source files and a trigger already applied to a schema would not notice.
   promise more than that node holds.
 - An actor holding a delegation has its purchases checked against the whole chain during
   authorization, and the budget returns if the payment never happens.
-- Revoking one hop ends every branch below it without touching a descendant or recalling anything.
+- Revoking one hop ends every branch below it without touching a descendant or recalling anything,
+  including for a payment already authorized: the chain is re-asked before checkout authority is
+  issued and again before it is consumed, and a payment stopped that way gives both budgets back.
 - Unsafe attempts are rejected before a provider order can be created and leave an auditable trace.
 
 ## How AI Is Used Here
@@ -264,6 +266,10 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `delegated-budget-returns-when-a-payment-dies` | A payment that never happens returns its delegated budget, on every path. |
 | `delegation-consulted-during-authorization` | A payment by an actor holding a delegation is checked against it. |
 | `delegation-chain-reads-fresh` | A chain read after a grant reports the allocation the grant just took. |
+| `checkout-re-asks-the-chain-before-issuing` | A delegation revoked after authorization stops the checkout it authorized. |
+| `checkout-re-asks-the-chain-before-consuming` | A chain revoked while its authority was in hand refuses the provider call. |
+| `blocked-checkout-returns-both-budgets` | A checkout blocked by a dead chain strands neither budget on the payment. |
+| `request-records-the-chain-it-spent` | A payment request names the delegation it debited, durably enough to re-ask. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

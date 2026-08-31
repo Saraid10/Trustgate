@@ -183,6 +183,10 @@ async def create_payment_request_for_context(
         request_id = uuid4()
 
         held = await active_delegation_for(session, tenant_id=tenant.id, actor_id=request.actor_id)
+        # Set only where the spend below succeeded, so it records what was *debited* rather than
+        # what the actor happened to hold. Checkout re-asks this chain before money moves, and a
+        # request that was refused must not hand it one to re-ask.
+        spent_delegation_id: UUID | None = None
 
         if result.decision != "DENY":
             # Both budgets inside one savepoint. Claiming the daily reservation and then refusing
@@ -218,12 +222,18 @@ async def create_payment_request_for_context(
                             reference=request_id,
                             correlation_id=correlation_id,
                         )
+                        spent_delegation_id = held.id
             except DelegationRefused as refused:
                 refusal = refused.reason
 
             if refusal is None:
                 await claim.commit()
             else:
+                # Nothing to unset. The spend below is the last thing that can happen inside the
+                # savepoint, so reaching here means it either never ran or raised, and either way
+                # `spent_delegation_id` was never assigned. A clearing line here reads like care
+                # and is unreachable - the mutation suite said so by surviving its removal. If a
+                # third budget is ever added after the spend, that stops being true.
                 await claim.rollback()
                 result = PolicyDecision(
                     decision="DENY",
@@ -243,6 +253,7 @@ async def create_payment_request_for_context(
             quantity=catalog_context.quantity if catalog_context else None,
             purpose=catalog_context.purpose if catalog_context else None,
             source=catalog_context.source if catalog_context else "API",
+            delegation_id=spent_delegation_id,
             **request.model_dump(),
         )
         session.add(payment_request)

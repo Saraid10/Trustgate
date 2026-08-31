@@ -311,6 +311,72 @@ async def resolve_chain(
     return chain
 
 
+async def _locked_chain(
+    session: AsyncSession, *, tenant_id: UUID, delegation_id: UUID
+) -> list[Delegation]:
+    """Walk a hop to its root and lock every hop on the way, root first.
+
+    Validating an ancestor by reading it and then acting leaves a gap a concurrent revoke fits
+    through: the caller re-checks `revoked_at` on the leaf and on nothing above it. Locking the
+    whole chain closes the gap. Root first, because two callers sharing ancestors that take their
+    locks in opposite orders deadlock.
+
+    Shared by `spend` and `assert_chain_live` because the lock order is the part that has to be
+    identical. Two copies of a deadlock-ordering rule is one copy too many.
+    """
+
+    walked = await resolve_chain(session, tenant_id=tenant_id, delegation_id=delegation_id)
+    return sorted(
+        (
+            await session.scalars(
+                locked(
+                    select(Delegation)
+                    .where(
+                        Delegation.tenant_id == tenant_id,
+                        Delegation.id.in_([hop.id for hop in walked]),
+                    )
+                    .order_by(Delegation.depth)
+                )
+            )
+        ).all(),
+        key=lambda hop: hop.depth,
+    )
+
+
+def _refuse_if_not_live(hop: Delegation, now: datetime) -> None:
+    """The two ways a hop stops being authority, in one place because two callers ask.
+
+    `spend` asks at authorization and `assert_chain_live` asks again before money moves. Written
+    twice, these drift: someone adds a third way to end a hop and updates the copy they were
+    looking at.
+    """
+
+    if hop.revoked_at is not None:
+        raise DelegationRefused("DELEGATION_REVOKED")
+    if hop.expires_at <= now:
+        raise DelegationRefused("DELEGATION_EXPIRED")
+
+
+async def assert_chain_live(
+    session: AsyncSession, *, tenant_id: UUID, delegation_id: UUID, as_of: datetime | None = None
+) -> list[Delegation]:
+    """Refuse unless every hop from this one to its root is still live, and lock them so it stays.
+
+    Authorization consults a chain once, and the money moves some time later. Between those two
+    moments a hop can be revoked or reach its expiry, and nothing was asking. This is what asks.
+
+    Locked rather than merely read, for the reason `spend` locks: a caller that reads a live chain
+    and then acts has decided from a chain a concurrent revoke is free to end underneath it. Root
+    first, so two callers sharing ancestors cannot deadlock against each other.
+    """
+
+    now = as_of or datetime.now(UTC)
+    chain = await _locked_chain(session, tenant_id=tenant_id, delegation_id=delegation_id)
+    for hop in chain:
+        _refuse_if_not_live(hop, now)
+    return chain
+
+
 async def revoke(
     session: AsyncSession,
     *,
@@ -379,27 +445,7 @@ async def spend(
         raise DelegationRefused("DELEGATION_AMOUNT_NOT_POSITIVE")
 
     now = as_of or datetime.now(UTC)
-    chain = await resolve_chain(session, tenant_id=tenant_id, delegation_id=delegation_id)
-
-    # Validating an ancestor by reading it, then claiming from the leaf, leaves a gap a concurrent
-    # revoke fits through: the claim below re-checks `revoked_at` on the leaf and on nothing above
-    # it. Locking the whole chain closes the gap. Root first, because two spends sharing ancestors
-    # that lock in opposite orders deadlock.
-    chain = sorted(
-        (
-            await session.scalars(
-                locked(
-                    select(Delegation)
-                    .where(
-                        Delegation.tenant_id == tenant_id,
-                        Delegation.id.in_([hop.id for hop in chain]),
-                    )
-                    .order_by(Delegation.depth)
-                )
-            )
-        ).all(),
-        key=lambda hop: hop.depth,
-    )
+    chain = await _locked_chain(session, tenant_id=tenant_id, delegation_id=delegation_id)
 
     current = await session.scalar(
         select(SpendingPolicy).where(
@@ -411,10 +457,7 @@ async def spend(
         raise DelegationRefused("DELEGATION_POLICY_DRIFT")
 
     for hop in chain:
-        if hop.revoked_at is not None:
-            raise DelegationRefused("DELEGATION_REVOKED")
-        if hop.expires_at <= now:
-            raise DelegationRefused("DELEGATION_EXPIRED")
+        _refuse_if_not_live(hop, now)
         if amount_minor > hop.max_amount_minor:
             raise DelegationRefused("DELEGATION_AMOUNT_EXCEEDS_HOP_LIMIT")
         if sku not in hop.allowed_skus:

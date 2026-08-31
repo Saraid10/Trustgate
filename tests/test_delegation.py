@@ -32,8 +32,16 @@ from delegation.chain import (
 )
 from models.domain import AuditEvent, Delegation, DelegationSpend, SpendingPolicy
 
-NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-"""Pinned, for the reason the daily-spend race test is pinned: a clock read is not a fixture."""
+NOW = datetime.now(UTC).replace(microsecond=0)
+"""One clock read for the whole module, for the reason the daily-spend race test pins one: two
+reads a millisecond apart are enough to make a child outlive its parent, and a test that fails on
+the straddle is a test nobody trusts.
+
+Read at import rather than written as a literal. A literal is deterministic and also a date, and
+`ck_delegation_expiry_after_creation` compares a stored expiry against the database's `now()` -
+so `NOW + 2 days` stops being a future date on a particular afternoon and the row starts being
+refused for a reason that has nothing to do with what the test is asserting. That is what happened
+here, three days after the literal was written."""
 
 SKUS = ("CLOUD-STARTER", "CLOUD-TEAM")
 
