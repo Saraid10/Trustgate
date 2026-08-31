@@ -539,6 +539,42 @@ MUTATIONS: tuple[Mutation, ...] = (
             "::test_the_request_records_the_chain_it_actually_spent",
         ),
     ),
+    Mutation(
+        name="expired-hop-stops-holding-its-actors-slot",
+        invariant="An actor whose delegation expired can be granted another one.",
+        path="delegation/chain.py",
+        original="    if holder.expires_at > now:\n",
+        mutated="    if True:\n",
+        guarding_tests=(
+            "tests/test_delegation.py"
+            "::test_an_actor_whose_delegation_expired_can_be_granted_another",
+        ),
+    ),
+    Mutation(
+        name="granting-cannot-silently-end-live-authority",
+        invariant="Making room for a grant never revokes a delegation that still works.",
+        path="delegation/chain.py",
+        original="    if holder.expires_at > now:\n",
+        mutated="    if False:\n",
+        guarding_tests=(
+            "tests/test_delegation.py"
+            "::test_an_actor_still_holding_live_authority_is_refused_a_second_grant",
+        ),
+    ),
+    Mutation(
+        name="revoke-does-not-describe-another-tenants-row",
+        invariant="A revoke that matches nothing says which nothing, without leaking the other.",
+        path="delegation/chain.py",
+        original=(
+            '            "DELEGATION_ALREADY_REVOKED" if present is not None'
+            ' else "DELEGATION_NOT_FOUND"\n'
+        ),
+        mutated='            "DELEGATION_ALREADY_REVOKED"\n',
+        guarding_tests=(
+            "tests/test_delegation_api.py"
+            "::test_revoking_another_tenants_delegation_is_not_found_not_already_revoked",
+        ),
+    ),
 )
 
 

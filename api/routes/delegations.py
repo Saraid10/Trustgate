@@ -21,7 +21,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +42,11 @@ router = APIRouter(prefix="/api/v1/delegations", tags=["delegations"])
 
 
 class GrantRequest(BaseModel):
-    """What a caller may ask for. Everything money-critical is bounded by the hop above it."""
+    """What a caller may ask for. Everything money-critical is bounded by the hop above it.
+
+    The validators below guard the two fields whose meaning `min_length` does not actually pin:
+    a string of spaces has a length, and a timestamp without a zone has a value.
+    """
 
     delegate_actor_id: str = Field(min_length=1, max_length=255)
     budget_minor: int = Field(gt=0)
@@ -51,6 +55,53 @@ class GrantRequest(BaseModel):
     purpose: str = Field(min_length=1)
     expires_at: datetime
     parent_id: UUID | None = None
+
+    @field_validator("expires_at")
+    @classmethod
+    def _must_carry_an_offset(cls, value: datetime) -> datetime:
+        """A naive datetime is an instant with an opinion nobody wrote down.
+
+        Every timestamp here is stored with a zone and compared against Postgres's `now()`. A naive
+        one gets an offset assigned somewhere further down, which makes how long a delegation lives
+        depend on where the process happens to be running. That is not a thing anyone should have to
+        know in order to read a chain.
+        """
+
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("expires_at must carry a UTC offset")
+        return value
+
+    @field_validator("delegate_actor_id", "purpose")
+    @classmethod
+    def _must_not_be_only_whitespace(cls, value: str) -> str:
+        """`min_length=1` is satisfied by a space, and a space becomes an identity.
+
+        `delegate_actor_id` is what `active_delegation_for` matches a payment against, so a blank
+        one is a chain that governs whoever the rest of the system also calls blank.
+        """
+
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be blank")
+        return cleaned
+
+    @field_validator("allowed_skus")
+    @classmethod
+    def _skus_must_be_distinct_and_present(cls, value: list[str]) -> list[str]:
+        """Scope is a set, and this is the only field that says what a hop may actually buy.
+
+        A blank entry is scope nothing can satisfy; a repeat is scope stated twice. Neither is
+        dangerous on its own, and both mean the caller sent something other than what they meant -
+        which matters here because narrowing downstream compares sets, so the list a caller reads
+        back would not be the list they sent.
+        """
+
+        cleaned = [sku.strip() for sku in value]
+        if any(not sku for sku in cleaned):
+            raise ValueError("allowed_skus may not contain a blank entry")
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("allowed_skus may not repeat a sku")
+        return cleaned
 
 
 class HopResponse(BaseModel):
@@ -91,6 +142,11 @@ _TRIGGER_REFUSALS: tuple[tuple[str, str], ...] = (
     ("per-payment cap may not exceed the policy", "DELEGATION_EXCEEDS_POLICY_PAYMENT_LIMIT"),
     ("may not outlive the policy", "DELEGATION_OUTLIVES_POLICY"),
     ("bounds are fixed at grant", "DELEGATION_BOUNDS_ARE_FIXED"),
+    # Not a trigger. `grant` refuses a live holder by name before it inserts, so reaching this is
+    # two grants for one actor racing: both looked, both saw room, one lost the index. The reason
+    # is the same one the check would have given, because from the caller's side it is the same
+    # thing - the actor already holds a delegation.
+    ("uq_delegation_one_live_per_actor", "DELEGATION_ACTOR_ALREADY_HOLDS_ONE"),
 )
 
 

@@ -270,6 +270,9 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `checkout-re-asks-the-chain-before-consuming` | A chain revoked while its authority was in hand refuses the provider call. |
 | `blocked-checkout-returns-both-budgets` | A checkout blocked by a dead chain strands neither budget on the payment. |
 | `request-records-the-chain-it-spent` | A payment request names the delegation it debited, durably enough to re-ask. |
+| `expired-hop-stops-holding-its-actors-slot` | An actor whose delegation expired can be granted another one. |
+| `granting-cannot-silently-end-live-authority` | Making room for a grant never revokes a delegation that still works. |
+| `revoke-does-not-describe-another-tenants-row` | A revoke that matches nothing says which nothing, without leaking the other. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

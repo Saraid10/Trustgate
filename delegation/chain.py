@@ -109,6 +109,14 @@ async def grant_root(
     if bounds.expires_at > policy.expiry:
         raise DelegationRefused("DELEGATION_OUTLIVES_POLICY")
 
+    await _make_room_for(
+        session,
+        tenant_id=tenant_id,
+        delegate_actor_id=delegate_actor_id,
+        now=datetime.now(UTC),
+        correlation_id=correlation_id,
+    )
+
     root = Delegation(
         id=uuid4(),
         tenant_id=tenant_id,
@@ -183,6 +191,14 @@ async def grant(
         # A read, not bookkeeping: the parent is already loaded, and the trigger would refuse this
         # anyway as a raw database error. This turns it into a reason a caller can act on.
         raise DelegationRefused("DELEGATION_BUDGET_EXCEEDS_PARENT")
+
+    await _make_room_for(
+        session,
+        tenant_id=tenant_id,
+        delegate_actor_id=delegate_actor_id,
+        now=datetime.now(UTC),
+        correlation_id=correlation_id,
+    )
 
     child = Delegation(
         id=uuid4(),
@@ -311,6 +327,77 @@ async def resolve_chain(
     return chain
 
 
+async def _make_room_for(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    delegate_actor_id: str,
+    now: datetime,
+    correlation_id: UUID | None,
+) -> None:
+    """Settle whatever this delegate already holds, or refuse because it genuinely still holds it.
+
+    `uq_delegation_one_live_per_actor` is partial on `revoked_at IS NULL`, and expiry is not
+    revocation. An index predicate cannot read the clock, so a hop that aged out at noon still
+    occupies its actor's slot at midnight, while `active_delegation_for` - which filters expiry in
+    the query, where it can - reports that actor as holding nothing. Both are right about their own
+    question and they disagree about the actor.
+
+    A grant walked straight into that disagreement and came back as a unique violation: a raw 500
+    for the most ordinary thing anyone does with an expired delegation, which is to issue the next
+    one.
+
+    An expired hop is finalized rather than refused. Nothing can be spent through it, and its
+    children cannot outlive it - the trigger refuses a child that tries - so the whole branch is
+    already dead and writing `revoked_at` only records what the clock did. A hop that is still live
+    is a different situation entirely and is refused: quietly ending someone's live authority to
+    make room for a new grant is not a thing granting should be able to do.
+
+    Recorded as its own event kind. `delegation_revoked` should mean a human ended something, and
+    an auditor reading this trail must not have to guess which revocations were people.
+    """
+
+    holder = await session.scalar(
+        locked(
+            select(Delegation).where(
+                Delegation.tenant_id == tenant_id,
+                Delegation.delegate_actor_id == delegate_actor_id,
+                Delegation.revoked_at.is_(None),
+            )
+        )
+    )
+    if holder is None:
+        return
+    if holder.expires_at > now:
+        raise DelegationRefused("DELEGATION_ACTOR_ALREADY_HOLDS_ONE")
+
+    await session.execute(
+        update(Delegation)
+        .where(
+            Delegation.tenant_id == tenant_id,
+            Delegation.id == holder.id,
+            Delegation.revoked_at.is_(None),
+        )
+        # Postgres's clock, for the reason `revoke` uses it: `created_at` came from the same one,
+        # and `ck_delegation_revocation_after_creation` is what a host clock would fail.
+        .values(revoked_at=func.now())
+    )
+    session.add(
+        _evidence(
+            tenant_id=tenant_id,
+            delegation_id=holder.id,
+            correlation_id=correlation_id,
+            kind="delegation_expiry_finalized",
+            payload={
+                "delegation_id": str(holder.id),
+                "delegate_actor_id": delegate_actor_id,
+                "expired_at": holder.expires_at.isoformat(),
+            },
+        )
+    )
+    await session.flush()
+
+
 async def _locked_chain(
     session: AsyncSession, *, tenant_id: UUID, delegation_id: UUID
 ) -> list[Delegation]:
@@ -406,7 +493,18 @@ async def revoke(
         .values(revoked_at=at or func.now())
     )
     if int(getattr(revoked, "rowcount", 0)) != 1:
-        raise DelegationRefused("DELEGATION_ALREADY_REVOKED")
+        # The update matches nothing for two unrelated reasons: the hop is already revoked, or it
+        # is not this tenant's hop at all (or does not exist). Reporting both as "already revoked"
+        # tells a caller that something it cannot see has a state, and sends the route to 409 for
+        # what is a 404. One read, only on the path that is already failing.
+        present = await session.scalar(
+            select(Delegation.id).where(
+                Delegation.tenant_id == tenant_id, Delegation.id == delegation_id
+            )
+        )
+        raise DelegationRefused(
+            "DELEGATION_ALREADY_REVOKED" if present is not None else "DELEGATION_NOT_FOUND"
+        )
 
     session.add(
         _evidence(

@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from delegation.chain import (
     Bounds,
     DelegationRefused,
+    active_delegation_for,
     grant,
     grant_root,
     release,
@@ -1209,3 +1210,162 @@ async def test_a_root_written_straight_to_the_database_cannot_exceed_its_policy(
             await async_session.flush()
 
     assert expected in str(raised.value)
+
+
+# --- an actor whose delegation ran out, asking for another one -----------------------------
+
+
+async def _expired_hop(
+    session: AsyncSession, data: FixtureData, *, actor: str, budget: int = 50_000
+) -> Delegation:
+    """A hop granted two days ago that ran out yesterday.
+
+    Built directly rather than granted and then aged. `freeze_delegation_bounds` refuses an update
+    to `expires_at` - correctly, and an earlier attempt at this discovered it by being refused - and
+    the alternative is a real sleep, which buys a flake to test a comparison. Supplying both
+    timestamps satisfies `ck_delegation_expiry_after_creation` with a row that is simply old, which
+    is exactly what an expired delegation is.
+    """
+
+    hop = Delegation(
+        id=uuid4(),
+        tenant_id=data.tenant_a.id,
+        parent_id=None,
+        depth=0,
+        policy_id=data.tenant_a_policy.id,
+        policy_version=data.tenant_a_policy.version,
+        root_actor_id="human-principal",
+        delegator_actor_id="human-principal",
+        delegate_actor_id=actor,
+        budget_minor=budget,
+        allocated_minor=0,
+        spent_minor=0,
+        max_amount_minor=10_000,
+        allowed_skus=list(SKUS),
+        purpose="ran out",
+        expires_at=NOW - timedelta(days=1),
+        created_at=NOW - timedelta(days=2),
+    )
+    session.add(hop)
+    await session.flush()
+    return hop
+
+
+@pytest.mark.asyncio
+async def test_an_actor_whose_delegation_expired_can_be_granted_another(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The ordinary thing to do with an expired delegation, which used to be a unique violation.
+
+    `uq_delegation_one_live_per_actor` is partial on `revoked_at IS NULL`, and an index predicate
+    cannot read the clock - so an aged-out hop kept holding its actor's slot while
+    `active_delegation_for` reported that same actor as holding nothing.
+    """
+
+    await _expired_hop(async_session, seeded_fixture_data, actor="agent-renewed")
+
+    granted = await grant_root(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        policy=seeded_fixture_data.tenant_a_policy,
+        principal_actor_id="human-principal",
+        delegate_actor_id="agent-renewed",
+        bounds=_bounds(budget=20_000),
+    )
+
+    assert granted.revoked_at is None
+    assert (
+        await active_delegation_for(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            actor_id="agent-renewed",
+        )
+        is not None
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_expired_hop_is_finalized_rather_than_left_holding_the_slot(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """Making room is a write, and a write about someone's authority has to be in the trail."""
+
+    stale = await _expired_hop(async_session, seeded_fixture_data, actor="agent-renewed")
+
+    await grant_root(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        policy=seeded_fixture_data.tenant_a_policy,
+        principal_actor_id="human-principal",
+        delegate_actor_id="agent-renewed",
+        bounds=_bounds(budget=20_000),
+    )
+
+    settled = await async_session.scalar(
+        select(Delegation.revoked_at).where(Delegation.id == stale.id)
+    )
+    kinds = (
+        await async_session.scalars(
+            select(AuditEvent.event_kind).where(AuditEvent.delegation_id == stale.id)
+        )
+    ).all()
+
+    assert settled is not None
+    assert "delegation_expiry_finalized" in kinds
+    assert "delegation_revoked" not in kinds, (
+        "a clock running out is not a human revoking, and the trail must not say it was"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_actor_still_holding_live_authority_is_refused_a_second_grant(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The other half of making room: not making it by ending something that still works.
+
+    Silently revoking live authority to satisfy a new grant would let anyone who can grant also
+    disarm an agent mid-purchase, without ever calling revoke.
+    """
+
+    await grant_root(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        policy=seeded_fixture_data.tenant_a_policy,
+        principal_actor_id="human-principal",
+        delegate_actor_id="agent-busy",
+        bounds=_bounds(budget=20_000),
+    )
+
+    with pytest.raises(DelegationRefused) as refused:
+        await grant_root(
+            async_session,
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            policy=seeded_fixture_data.tenant_a_policy,
+            principal_actor_id="human-principal",
+            delegate_actor_id="agent-busy",
+            bounds=_bounds(budget=10_000),
+        )
+
+    assert refused.value.reason == "DELEGATION_ACTOR_ALREADY_HOLDS_ONE"
+
+
+@pytest.mark.asyncio
+async def test_a_child_can_be_granted_to_an_actor_whose_own_delegation_expired(
+    async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The same rule down the chain, because `grant` has the same index to satisfy."""
+
+    await _expired_hop(async_session, seeded_fixture_data, actor="agent-b")
+    root = await _root(async_session, seeded_fixture_data)
+
+    child = await grant(
+        async_session,
+        tenant_id=seeded_fixture_data.tenant_a.id,
+        parent_id=root.id,
+        delegator_actor_id="agent-a",
+        delegate_actor_id="agent-b",
+        bounds=_bounds(budget=10_000, days=1),
+    )
+
+    assert child.depth == 1
+    assert child.revoked_at is None

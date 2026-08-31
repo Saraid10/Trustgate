@@ -211,6 +211,13 @@ What is not attempted:
   rollback is what makes a crash mid-consume fail closed. Issuing is where a dead chain cancels the
   payment and returns both. Trading a guarantee about money for a guarantee about bookkeeping was
   not worth it, and this is the note saying so.
+- **An expired delegation is finalized by the next grant, not by anything watching the clock.**
+  `uq_delegation_one_live_per_actor` is partial on `revoked_at IS NULL` because an index predicate
+  cannot read the time, so an aged-out hop keeps its actor's slot until someone grants again - at
+  which point it is revoked and recorded as `delegation_expiry_finalized`. Nothing sweeps expired
+  hops on its own, so between expiry and the next grant a hop is dead to every spend and still
+  present as the actor's live row. Everything that asks about authority filters expiry in the
+  query, so nothing is fooled; a report that counted rows would be.
 - **A delegation is found by actor id, and an actor id is a string.** `active_delegation_for`
   matches on `delegate_actor_id`, so the chain that governs a payment is chosen by the same
   unauthenticated identity as everything else here. The enforcement is real; what it is bound to
@@ -255,7 +262,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **41 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **44 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

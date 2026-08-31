@@ -156,6 +156,15 @@ async def _cleanup(session_factory: async_sessionmaker[AsyncSession], tenant_id:
         await session.execute(delete(AuditEvent).where(AuditEvent.tenant_id == tenant_id))
         # Ledger rows reference the hop they were spent against, so they go before it.
         await session.execute(delete(DelegationSpend).where(DelegationSpend.tenant_id == tenant_id))
+        # A request names the delegation it spent with a RESTRICT foreign key, so that link has to
+        # go before the hop does. Nulled rather than reordered: these rows are deleted below anyway,
+        # and this keeps the order a list rather than a dependency puzzle that breaks the next time
+        # something grows a reference to a delegation.
+        await session.execute(
+            update(PaymentRequest)
+            .where(PaymentRequest.tenant_id == tenant_id)
+            .values(delegation_id=None)
+        )
         # Delegations point at their parent with RESTRICT, so a single bulk delete can reach a
         # parent before its children. Deepest hop first is the only order that always works.
         for depth in range(MAX_DEPTH, -1, -1):
@@ -743,6 +752,66 @@ async def test_a_revoke_cannot_land_between_validating_a_chain_and_spending_it()
                 select(Delegation.spent_minor).where(Delegation.id == child_id)
             )
         assert spent == 10
+    finally:
+        await _cleanup(sessions, data.tenant_id)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_two_grants_to_one_actor_race_and_only_one_survives() -> None:
+    """`grant_root` refuses a live holder by name, and that check is a read taken before a write.
+
+    Two callers can both read "this actor holds nothing" before either of them inserts. The
+    application check exists so the ordinary case gets a reason instead of a stack trace;
+    `uq_delegation_one_live_per_actor` is what makes the rule true when the ordinary case is not
+    what happened.
+
+    One live delegation per actor is what `active_delegation_for` depends on to return one thing
+    rather than choosing from several - so two surviving here would not be a tidiness problem, it
+    would mean the chain governing a payment is whichever row the database felt like returning.
+    """
+
+    engine = create_async_engine(DATABASE_URL)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    data = await _seed(sessions, state="AUTHORIZED")
+    actor = f"race-delegate-{uuid4().hex[:8]}"
+
+    async def grant_one(session: AsyncSession) -> object:
+        policy = await session.scalar(
+            select(SpendingPolicy).where(SpendingPolicy.id == data.policy_id)
+        )
+        assert policy is not None
+        granted = await grant_root(
+            session,
+            tenant_id=data.tenant_id,
+            policy=policy,
+            principal_actor_id="race-human",
+            delegate_actor_id=actor,
+            bounds=Bounds(
+                budget_minor=100,
+                max_amount_minor=100,
+                allowed_skus=("CLOUD-STARTER",),
+                purpose="race",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+            ),
+        )
+        return granted.id
+
+    try:
+        results = await _race(sessions, grant_one)
+        async with sessions() as session:
+            live = await session.scalar(
+                select(func.count())
+                .select_from(Delegation)
+                .where(
+                    Delegation.tenant_id == data.tenant_id,
+                    Delegation.delegate_actor_id == actor,
+                    Delegation.revoked_at.is_(None),
+                )
+            )
+
+        assert live == 1, _describe(results)
+        assert sum(isinstance(result, Exception) for result in results) == 1, _describe(results)
     finally:
         await _cleanup(sessions, data.tenant_id)
         await engine.dispose()
