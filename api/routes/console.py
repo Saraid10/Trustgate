@@ -41,6 +41,7 @@ from models.domain import (
     Approval,
     AuditEvent,
     AuthorizationDecision,
+    Delegation,
     Payment,
     PaymentRequest,
     RazorpayOrder,
@@ -117,6 +118,7 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
     decisions: dict[UUID, AuthorizationDecision] = {}
     approvals: dict[UUID, Approval] = {}
     orders: dict[UUID, RazorpayOrder] = {}
+    delegation_roots: dict[UUID, str] = {}
 
     if request_ids:
         for loaded_payment in (
@@ -153,6 +155,23 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
         ).all():
             approvals.setdefault(loaded_approval.payment_request_id, loaded_approval)
 
+        # One query for the whole page rather than one per row: the console renders a
+        # timeline, and a per-row chain walk would make the number of queries a function of how
+        # busy the tenant was. Only the root is needed here - the receipt is where a reader goes
+        # for the hops.
+        delegated = [
+            request.delegation_id for request in requests if request.delegation_id is not None
+        ]
+        if delegated:
+            for hop in (
+                await session.scalars(
+                    select(Delegation).where(
+                        Delegation.tenant_id == tenant_id, Delegation.id.in_(delegated)
+                    )
+                )
+            ).all():
+                delegation_roots[hop.id] = hop.root_actor_id
+
         payment_ids = [loaded.id for loaded in payments.values()]
         if payment_ids:
             for loaded_order in (
@@ -186,6 +205,11 @@ async def _timeline(session: AsyncSession, tenant_id: UUID) -> list[ConsoleEntry
                 decision=decision.decision if decision else None,
                 reasons=tuple(decision.reasons) if decision else (),
                 approval_granted_by=approval.granted_by if approval else None,
+                delegation_root_actor_id=(
+                    delegation_roots.get(request.delegation_id)
+                    if request.delegation_id is not None
+                    else None
+                ),
                 payment_state=payment.state if payment else None,
                 provider_order_id=order.razorpay_order_id if order else None,
                 provider_state=order.provider_state if order else None,
@@ -238,6 +262,9 @@ async def _boundary_refusals(session: AsyncSession, tenant_id: UUID) -> list[Con
                 decision="REFUSED",
                 reasons=(str(reason),) if reason is not None else (),
                 approval_granted_by=None,
+                # A refusal at the MCP boundary never reached a payment request, so there is no
+                # delegation to name - the attack did not get as far as having authority checked.
+                delegation_root_actor_id=None,
                 payment_state=None,
                 provider_order_id=None,
                 provider_state=None,

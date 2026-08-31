@@ -423,6 +423,39 @@ class EvidenceDelegation(BaseModel):
     refusal_reason: str | None
 
 
+class AuthorizationEnvelope(BaseModel):
+    """One answer to "may money move here, and on whose authority", in a fixed shape.
+
+    Every field is already somewhere else in this record. The envelope adds no fact; it collects
+    the ones a reader needs to decide whether to be worried, so that answering "what was decided
+    and can the provider be called" does not mean reading five sections and knowing which of them
+    outranks the others.
+
+    `provider_action_allowed` is the field to be careful about, so it is defined narrowly: it says
+    whether the *record currently shows* a live, unused checkout authority over an authorized
+    payment whose chain, if it has one, is still live. It is a description of stored rows, not a
+    prediction and not a gate. The gate is `consume_checkout_authority`, which re-checks all of it
+    inside a transaction that holds the row locks - and which, unlike this, is the thing standing
+    between an agent and Razorpay. An envelope that said "allowed" would still be refused there if
+    the world moved in between; that is the correct order of authority between the two.
+    """
+
+    payment_request_id: UUID
+    decision: Literal["ALLOW", "DENY", "REQUIRE_APPROVAL"] | None
+    reason_codes: list[str]
+    merchant_id: UUID
+    merchant_display_name: str | None
+    amount_minor: NonNegativeAmount
+    currency: str
+    policy_version: int | None
+    approval_state: Literal["UNKNOWN", "NOT_REQUIRED", "REQUIRED", "GRANTED", "EXPIRED", "CONSUMED"]
+    delegation_id: UUID | None
+    delegation_root_actor_id: str | None
+    authority_expires_at: datetime | None
+    provider_action_allowed: bool
+    provider_action_blocked_reason: str | None
+
+
 class PaymentRequestEvidence(BaseModel):
     """A traceable record of one purchase attempt.
 
@@ -434,6 +467,7 @@ class PaymentRequestEvidence(BaseModel):
     payment_request_id: UUID
     tenant_id: UUID
     generated_at: datetime
+    envelope: AuthorizationEnvelope
     proposed: EvidenceProposal
     derived: EvidenceDerivedFacts
     policy: EvidencePolicy | None

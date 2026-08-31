@@ -323,6 +323,9 @@ def test_hostile_catalog_text_cannot_inject_markup_into_the_timeline() -> None:
         decision="DENY",
         reasons=("<script>alert('reason')</script>",),
         approval_granted_by=None,
+        # Rendered verbatim otherwise, and supplied by whoever granted the chain rather than by
+        # this codebase - so it belongs in the same list as catalog text.
+        delegation_root_actor_id="<script>alert('root')</script>",
         payment_state="DENIED",
         provider_order_id=None,
         provider_state=None,
@@ -455,6 +458,7 @@ def _entry(**overrides: object) -> ConsoleEntry:
         "decision": "ALLOW",
         "reasons": (),
         "approval_granted_by": None,
+        "delegation_root_actor_id": None,
         "payment_state": "AUTHORIZED",
         "provider_order_id": None,
         "provider_state": None,

@@ -151,6 +151,38 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
             + f"<ul class='events'>{hops}</ul>"
         )
 
+    # Above the three stages, because it answers the question a reader arrives with. The stages
+    # below are how the answer was reached; a reader who only wants the answer should not have to
+    # reconstruct it from them, and a reader who doubts it has the stages right there.
+    envelope = evidence.envelope
+    envelope_body = _rows(
+        [
+            ("Decision", f"<strong class='verdict'>{_text(envelope.decision)}</strong>"),
+            ("Reason codes", _text(", ".join(envelope.reason_codes) or "—")),
+            ("Merchant", _text(envelope.merchant_display_name)),
+            ("Amount", f"<strong>{_money(envelope.amount_minor, envelope.currency)}</strong>"),
+            ("Policy version", _text(envelope.policy_version)),
+            ("Approval", _text(envelope.approval_state)),
+            (
+                # "Delegated by", not "Delegated authority": the envelope has a fixed shape and
+                # says "none" for the ordinary purchase, while the section further down appears
+                # only when there was a chain. Two different labels for two different claims.
+                "Delegated by",
+                _text(envelope.delegation_root_actor_id)
+                if envelope.delegation_root_actor_id is not None
+                else "none",
+            ),
+            ("Authority expires", _text(envelope.authority_expires_at)),
+            (
+                "Provider action",
+                "<strong class='verdict'>ALLOWED</strong>"
+                if envelope.provider_action_allowed
+                else f"<strong class='verdict'>NOT ALLOWED</strong> "
+                f"<span class='muted'>{_text(envelope.provider_action_blocked_reason)}</span>",
+            ),
+        ]
+    )
+
     if evidence.provider_order is None:
         provider_body = (
             "<p class='empty'>No provider order exists for this request. "
@@ -234,10 +266,17 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
   .trail {{ margin-top: 1rem; background: #fff; border: 1px solid #d2dfdf;
             border-radius: 12px; padding: 1.25rem; }}
   .trail h2 {{ font-size: .95rem; margin: 0 0 .75rem; }}
+  .envelope {{ background: #fff; border: 1px solid #d2dfdf; border-radius: 12px;
+               padding: 1.25rem; margin-bottom: 1rem; }}
+  .envelope h2 {{ font-size: .95rem; margin: 0 0 .2rem; }}
+  .envelope .sub {{ margin: 0 0 1rem; font-size: .78rem; color: #5e7477; }}
+  .envelope.ok {{ border-left: 4px solid #2c6349; }}
+  .envelope.warn {{ border-left: 4px solid #8c5a0c; }}
+  .envelope.bad {{ border-left: 4px solid #973029; }}
   .note {{ margin-top: 1.5rem; font-size: .8rem; color: #5e7477; }}
   @media (prefers-color-scheme: dark) {{
     body {{ background: #080f10; color: #e6efef; }}
-    .stage, .trail {{ background: #101a1c; border-color: #223436; }}
+    .stage, .trail, .envelope {{ background: #101a1c; border-color: #223436; }}
     .row {{ border-bottom-color: #18262a; }}
   }}
 </style>
@@ -249,6 +288,11 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
     <div class="meta">request {_text(evidence.payment_request_id)}<br>
       generated {_text(evidence.generated_at)}</div>
   </header>
+  <section class="envelope {tone}">
+    <h2>Authorization decision</h2>
+    <p class="sub">The answer, and below it how it was reached</p>
+    {envelope_body}
+  </section>
   <div class="stages">
     {stage_one}
     {stage_two}

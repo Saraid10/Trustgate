@@ -52,6 +52,11 @@ class ConsoleEntry:
     decision: str | None
     reasons: tuple[str, ...]
     approval_granted_by: str | None
+    # The human whose authority the purchase ran under, or None because most purchases run under
+    # nobody's in particular. On this screen it is the difference between "an agent bought
+    # something" and "an agent spent a budget a named person handed it", which is the whole claim
+    # delegation makes and the one a reviewer scanning rows would otherwise never see.
+    delegation_root_actor_id: str | None
     payment_state: str | None
     provider_order_id: str | None
     provider_state: str | None
@@ -164,6 +169,11 @@ def _verdict_cell(entry: ConsoleEntry) -> str:
         parts.append(f"<span class='reasons'>{_text(reasons)}</span>")
     if entry.approval_granted_by is not None:
         parts.append(f"<span class='muted'>approved by {_text(entry.approval_granted_by)}</span>")
+    if entry.delegation_root_actor_id is not None:
+        parts.append(
+            f"<span class='muted'>under authority from "
+            f"{_text(entry.delegation_root_actor_id)}</span>"
+        )
     return "".join(parts)
 
 

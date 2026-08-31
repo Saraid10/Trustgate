@@ -43,6 +43,7 @@ from models.domain import (
     Tenant,
 )
 from schemas.domain import (
+    AuthorizationEnvelope,
     EvidenceApproval,
     EvidenceAuditEntry,
     EvidenceAuthority,
@@ -199,7 +200,56 @@ async def build_payment_request_evidence(
         None,
     )
 
+    now = datetime.now(UTC)
+    if decision is None:
+        approval_state = "UNKNOWN"
+    elif decision.decision != "REQUIRE_APPROVAL":
+        approval_state = "NOT_REQUIRED"
+    elif approval is None:
+        approval_state = "REQUIRED"
+    elif approval.consumed_at is not None:
+        approval_state = "CONSUMED"
+    elif approval.expires_at <= now:
+        approval_state = "EXPIRED"
+    else:
+        approval_state = "GRANTED"
+
+    # Ordered the way the real gate checks, so the reason a reader sees is the reason they would
+    # get. It is still a description of stored rows rather than a verdict: `consume_checkout_
+    # authority` re-runs all of this under row locks, and it is the one that decides.
+    blocked: str | None = None
+    if payment is None or payment.state != "AUTHORIZED":
+        blocked = "PAYMENT_NOT_AUTHORIZED"
+    elif authority is None:
+        blocked = "NO_CHECKOUT_AUTHORITY_ISSUED"
+    elif authority.used_at is not None:
+        blocked = "CHECKOUT_AUTHORITY_ALREADY_USED"
+    elif authority.expires_at <= now:
+        blocked = "CHECKOUT_AUTHORITY_EXPIRED"
+    elif any(hop.revoked_at is not None for hop in delegation_chain):
+        blocked = "DELEGATION_REVOKED"
+    elif any(hop.expires_at <= now for hop in delegation_chain):
+        blocked = "DELEGATION_EXPIRED"
+
     return PaymentRequestEvidence(
+        envelope=AuthorizationEnvelope(
+            payment_request_id=request.id,
+            decision=decision.decision if decision is not None else None,  # type: ignore[arg-type]
+            reason_codes=list(decision.reasons) if decision is not None else [],
+            merchant_id=request.merchant_id,
+            merchant_display_name=request.merchant_display_name,
+            amount_minor=request.amount_minor,
+            currency=request.currency,
+            policy_version=decision.policy_version if decision is not None else None,
+            approval_state=approval_state,  # type: ignore[arg-type]
+            delegation_id=request.delegation_id,
+            delegation_root_actor_id=(
+                delegation_chain[0].root_actor_id if delegation_chain else None
+            ),
+            authority_expires_at=authority.expires_at if authority is not None else None,
+            provider_action_allowed=blocked is None,
+            provider_action_blocked_reason=blocked,
+        ),
         payment_request_id=request.id,
         tenant_id=tenant.id,
         generated_at=datetime.now(UTC),

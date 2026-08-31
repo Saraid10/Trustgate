@@ -282,9 +282,17 @@ async def test_the_receipt_renders_the_chain_and_the_human_at_its_root(
 async def test_the_receipt_of_an_undelegated_purchase_says_nothing_about_delegation(
     client: AsyncClient, seeded_fixture_data: FixtureData
 ) -> None:
+    """No section, and the envelope saying "none" rather than staying silent.
+
+    The two are different claims. A missing section means no chain was involved; the envelope has
+    a fixed shape and answers the question either way, which is what makes it comparable between
+    one purchase and the next.
+    """
+
     request_id = await _buy(client, seeded_fixture_data)
 
     page = await _receipt(client, seeded_fixture_data, request_id)
 
     assert page.status_code == 200
     assert "Delegated authority" not in page.text
+    assert "Delegated by" in page.text

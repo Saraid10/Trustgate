@@ -211,6 +211,12 @@ What is not attempted:
   rollback is what makes a crash mid-consume fail closed. Issuing is where a dead chain cancels the
   payment and returns both. Trading a guarantee about money for a guarantee about bookkeeping was
   not worth it, and this is the note saying so.
+- **The envelope's `provider_action_allowed` is a description, not a decision.** It says whether
+  the record currently shows a live, unused checkout authority over an authorized payment whose
+  chain, if it has one, is still live. It is read outside a transaction and holds no locks, so an
+  envelope that says ALLOWED and a `consume_checkout_authority` that refuses a moment later are
+  both correct - the gate is the consume, which re-checks all of it under row locks. Treating the
+  envelope as the authority would be exactly the mistake the project is about.
 - **An expired delegation is finalized by the next grant, not by anything watching the clock.**
   `uq_delegation_one_live_per_actor` is partial on `revoked_at IS NULL` because an index predicate
   cannot read the time, so an aged-out hop keeps its actor's slot until someone grants again - at
@@ -262,7 +268,7 @@ So that the limits above are read against the right baseline:
 
 - **16 Tier A adversarial scenarios**, whose published attack matrix is generated from the
   scenario registry, with a test asserting the two match. The full suite runs on every push.
-- **47 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
+- **50 mutations** of the safety-critical code, each requiring its guarding tests to fail. A
   passing suite says the code behaves as written; this says the tests would object if it stopped.
 - **Concurrency invariants tested concurrently** — races, not sequential approximations of them.
 - **CI runs the same Postgres 16 as the compose file**, migrates, and runs the mutation suite on

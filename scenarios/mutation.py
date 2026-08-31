@@ -615,6 +615,39 @@ MUTATIONS: tuple[Mutation, ...] = (
             "::test_the_evidence_names_the_human_the_authority_came_from",
         ),
     ),
+    Mutation(
+        name="envelope-will-not-say-a-payment-may-be-made-without-authority",
+        invariant="An authorized purchase with no checkout authority is not allowed to pay.",
+        path="api/routes/evidence.py",
+        original='        blocked = "NO_CHECKOUT_AUTHORITY_ISSUED"\n',
+        mutated="        blocked = None\n",
+        guarding_tests=(
+            "tests/test_authorization_envelope.py"
+            "::test_an_authorized_purchase_with_no_authority_yet_is_not_allowed_to_pay",
+        ),
+    ),
+    Mutation(
+        name="envelope-notices-the-chain-died-under-the-authority",
+        invariant="A revoked chain takes the provider action away from an issued authority.",
+        path="api/routes/evidence.py",
+        original="    elif any(hop.revoked_at is not None for hop in delegation_chain):\n",
+        mutated="    elif False:\n",
+        guarding_tests=(
+            "tests/test_authorization_envelope.py"
+            "::test_a_revoked_chain_takes_the_provider_action_away_again",
+        ),
+    ),
+    Mutation(
+        name="the-timeline-names-the-authority-a-purchase-ran-under",
+        invariant="A delegated purchase says whose authority it spent, on the timeline.",
+        path="api/console_view.py",
+        original="    if entry.delegation_root_actor_id is not None:\n",
+        mutated="    if False:\n",
+        guarding_tests=(
+            "tests/test_authorization_envelope.py"
+            "::test_the_console_says_whose_authority_a_delegated_purchase_ran_under",
+        ),
+    ),
 )
 
 

@@ -276,6 +276,9 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `the-spend-joins-its-purchase` | A delegation spend is reachable from the payment request it paid for. |
 | `the-release-joins-its-purchase` | A returned delegation budget is reachable from the purchase that returned it. |
 | `evidence-names-the-delegated-authority` | A purchase made under a delegation says so in its evidence record. |
+| `envelope-will-not-say-a-payment-may-be-made-without-authority` | An authorized purchase with no checkout authority is not allowed to pay. |
+| `envelope-notices-the-chain-died-under-the-authority` | A revoked chain takes the provider action away from an issued authority. |
+| `the-timeline-names-the-authority-a-purchase-ran-under` | A delegated purchase says whose authority it spent, on the timeline. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

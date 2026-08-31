@@ -63,6 +63,7 @@ def test_the_phrases_the_script_points_at_are_still_on_screen() -> None:
             "decision": "ALLOW",
             "reasons": (),
             "approval_granted_by": None,
+            "delegation_root_actor_id": None,
             "payment_state": "AUTHORIZED",
             "provider_order_id": None,
             "provider_state": None,
