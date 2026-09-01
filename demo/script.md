@@ -249,12 +249,12 @@ make mutation
 > Sixteen adversarial scenarios, and a generated attack matrix a test keeps honest, so the README
 > cannot claim an attack that is not covered.
 >
-> And this: fifty deliberate breaks of the safety code, each requiring its tests to fail. A
+> And this: fifty-two deliberate breaks of the safety code, each requiring its tests to fail. A
 > passing suite says the code behaves as written. It does not say the tests would object if it
 > stopped doing something important.
 
 Say the number the terminal is printing, not one you remember. It has been sixteen, eighteen,
-twenty-six, thirty-three, thirty-seven, forty-one, forty-four and forty-seven on the way here, and being contradicted by your own screen is the one
+twenty-six, thirty-three, thirty-seven, forty-one, forty-four, forty-seven and fifty on the way here, and being contradicted by your own screen is the one
 mistake in this beat a viewer will actually notice.
 
 Close on the limits, deliberately:

@@ -279,6 +279,8 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `envelope-will-not-say-a-payment-may-be-made-without-authority` | An authorized purchase with no checkout authority is not allowed to pay. |
 | `envelope-notices-the-chain-died-under-the-authority` | A revoked chain takes the provider action away from an issued authority. |
 | `the-timeline-names-the-authority-a-purchase-ran-under` | A delegated purchase says whose authority it spent, on the timeline. |
+| `the-banner-says-nothing-was-written-down` | An attack refused before a payment request exists says so, rather than blankly. |
+| `reason-codes-reach-a-reader-as-sentences` | A refusal is shown in words, not as the code it is stored under. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires

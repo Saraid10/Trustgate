@@ -32,6 +32,35 @@ _SETTLED_WITHOUT_PROVIDER = frozenset({"DENIED", "EXPIRED", "FAILED", "CANCELLED
 
 
 @dataclass(frozen=True)
+class ConsoleHeadline:
+    """The most recent attempt, said once and said large.
+
+    The timeline answers "what has been tried". This answers "where does the newest thing stand",
+    which is the question someone watching over a shoulder is actually asking, and which they were
+    previously answering by reading the top row of a five-column table.
+
+    Assembled from the same evidence record the receipt renders, not from a second set of queries.
+    A banner that disagreed with the receipt it sits above would be worse than no banner.
+    """
+
+    verdict: str
+    """AUTHORIZED, APPROVAL REQUIRED, or BLOCKED. Not the raw decision: `REQUIRE_APPROVAL` that a
+    human has since granted is `AUTHORIZED` here, because that is what is true now."""
+
+    tone: str
+    reasons: tuple[str, ...]
+    provider_action_allowed: bool
+    provider_action_blocked_reason: str | None
+    delegation_root_actor_id: str | None
+    delegation_remaining_minor: int | None
+    currency: str
+    has_payment_request: bool
+    """False for an attack refused at the tool boundary. There is no request, no amount, and no
+    receipt - which is the strongest thing this system does and the easiest thing to render as an
+    empty panel if nobody says so on purpose."""
+
+
+@dataclass(frozen=True)
 class ConsoleEntry:
     """One purchase attempt, flattened to what a reviewer needs at a glance.
 
@@ -204,6 +233,55 @@ def _row(entry: ConsoleEntry, *, receipt_href: str | None) -> str:
     )
 
 
+def _headline_panel(headline: ConsoleHeadline | None) -> str:
+    """The verdict, why, and whether money may move - in that order, because that is the order
+    someone reads them in and the order they matter in."""
+
+    if headline is None:
+        return ""
+    reasons = (
+        "".join(f"<li>{_text(reason)}</li>" for reason in headline.reasons)
+        or "<li class='muted'>No reason was recorded.</li>"
+    )
+    if headline.provider_action_allowed:
+        provider = "<span class='yes'>Order creation allowed: Yes</span>"
+    else:
+        provider = (
+            "<span class='no'>Order creation allowed: No</span>"
+            f"<span class='muted'>{_text(headline.provider_action_blocked_reason)}</span>"
+        )
+    authority = ""
+    if headline.delegation_root_actor_id is not None:
+        remaining = (
+            _money(headline.delegation_remaining_minor, headline.currency)
+            if headline.delegation_remaining_minor is not None
+            else "&mdash;"
+        )
+        authority = (
+            f"<div class='authority'><span class='muted'>Delegated by</span> "
+            f"<strong>{_text(headline.delegation_root_actor_id)}</strong>"
+            f"<span class='muted'>{remaining} left on the chain</span></div>"
+        )
+    # Said explicitly rather than shown as an empty panel. An attack turned away before a payment
+    # request exists produces no amount and no receipt, and that absence is the safety property -
+    # a blank space says "we have not loaded it yet".
+    nothing_written = (
+        "<div class='authority'><span class='muted'>No payment request was created, so there is "
+        "nothing to write a receipt about.</span></div>"
+        if not headline.has_payment_request
+        else ""
+    )
+    return (
+        f"<section class='headline {headline.tone}'>"
+        f"<p class='l'>Current decision</p>"
+        f"<p class='verdict'>{_text(headline.verdict)}</p>"
+        f"<ul class='why'>{reasons}</ul>"
+        f"<div class='provider'>{provider}</div>"
+        f"{authority}{nothing_written}"
+        "</section>"
+    )
+
+
 def render_console(
     *,
     tenant_id: UUID,
@@ -211,6 +289,7 @@ def render_console(
     entries: list[ConsoleEntry],
     receipt_href: str,
     generated_at: datetime,
+    headline: ConsoleHeadline | None = None,
 ) -> str:
     """Build the timeline page for one tenant.
 
@@ -266,6 +345,24 @@ def render_console(
   header {{ margin-bottom: 1.5rem; }}
   h1 {{ font-size: 1.5rem; margin: 0 0 .3rem; }}
   .meta {{ color: #5e7477; font-size: .85rem; font-family: ui-monospace, monospace; }}
+  .headline {{ background: #fff; border: 1px solid #d2dfdf; border-radius: 12px;
+               padding: 1.5rem 1.5rem 1.25rem; margin: 1.25rem 0; }}
+  .headline.ok {{ border-left: 6px solid #2c6349; }}
+  .headline.warn {{ border-left: 6px solid #8c5a0c; }}
+  .headline.bad {{ border-left: 6px solid #973029; }}
+  .headline .l {{ margin: 0; font-size: .75rem; letter-spacing: .1em; text-transform: uppercase;
+                  color: #5e7477; }}
+  .headline .verdict {{ margin: .1rem 0 .6rem; font-size: 2.4rem; font-weight: 700;
+                        letter-spacing: -.01em; line-height: 1.1; }}
+  .headline .why {{ list-style: none; padding: 0; margin: 0 0 .9rem; font-size: .95rem;
+                    display: grid; gap: .2rem; color: inherit; }}
+  .headline .provider {{ font-size: 1rem; font-weight: 600; display: flex; gap: .6rem;
+                         align-items: baseline; flex-wrap: wrap; }}
+  .headline .provider .yes {{ color: #2c6349; }}
+  .headline .provider .no {{ color: #973029; }}
+  .headline .authority {{ margin-top: .55rem; font-size: .9rem; display: flex; gap: .5rem;
+                          align-items: baseline; flex-wrap: wrap; }}
+  .headline .muted {{ font-weight: 400; }}
   .tally {{ display: flex; gap: 1.5rem; margin: 1.25rem 0 1.75rem; flex-wrap: wrap; }}
   .tally div {{ background: #fff; border: 1px solid #d2dfdf; border-radius: 12px;
                 padding: .75rem 1.1rem; min-width: 8rem; }}
@@ -298,7 +395,9 @@ def render_console(
   .note {{ margin-top: 1.5rem; font-size: .8rem; color: #5e7477; max-width: 46rem; }}
   @media (prefers-color-scheme: dark) {{
     body {{ background: #080f10; color: #e6efef; }}
-    table, .tally div, .empty {{ background: #101a1c; border-color: #223436; }}
+    table, .tally div, .empty, .headline {{ background: #101a1c; border-color: #223436; }}
+    .headline .provider .yes {{ color: #6fbf95; }}
+    .headline .provider .no {{ color: #e0847c; }}
     th {{ border-color: #223436; color: #e6efef; }}
     td {{ border-color: #162426; }}
     .purpose {{ color: #e6efef; }}
@@ -315,6 +414,7 @@ def render_console(
   <h1>{_text(tenant_name)}</h1>
   <p class="meta">tenant {_text(tenant_id)} &middot; generated {_text(generated_at)}</p>
 </header>
+{_headline_panel(headline)}
 <div class="tally">
   <div><span class="n">{len(entries)}</span><span class="l">attempts</span></div>
   <div><span class="n">{blocked}</span><span class="l">refused</span></div>

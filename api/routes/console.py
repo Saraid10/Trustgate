@@ -33,8 +33,9 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.console_view import ConsoleEntry, render_console
+from api.console_view import ConsoleEntry, ConsoleHeadline, render_console
 from api.database import get_session
+from api.reason_text import humanise, humanise_all
 from api.receipt import render_receipt
 from api.routes.evidence import build_payment_request_evidence
 from models.domain import (
@@ -273,6 +274,72 @@ async def _boundary_refusals(session: AsyncSession, tenant_id: UUID) -> list[Con
     return entries
 
 
+async def _headline(
+    session: AsyncSession, tenant: Tenant, entries: list[ConsoleEntry]
+) -> ConsoleHeadline | None:
+    """Say where the newest attempt stands, from the same evidence the receipt renders.
+
+    Built from `build_payment_request_evidence` rather than from the timeline row, because the
+    banner claims things a row does not know - whether the provider may be called, and what is left
+    on the chain. Assembling those separately would be a second opinion about one purchase, and the
+    console's whole design note is that there is only ever one.
+
+    The newest attack is the case that has no evidence record to read: it was refused before a
+    payment request existed. That is not a missing headline, it is the headline.
+    """
+
+    if not entries:
+        return None
+    newest = entries[0]
+    if newest.payment_request_id is None:
+        return ConsoleHeadline(
+            verdict="BLOCKED",
+            tone="bad",
+            reasons=humanise_all(newest.reasons),
+            provider_action_allowed=False,
+            provider_action_blocked_reason=humanise("NO_PAYMENT_REQUEST_CREATED"),
+            delegation_root_actor_id=None,
+            delegation_remaining_minor=None,
+            currency=newest.currency,
+            has_payment_request=False,
+        )
+
+    evidence = await build_payment_request_evidence(
+        session, tenant=tenant, payment_request_id=newest.payment_request_id
+    )
+    envelope = evidence.envelope
+    if envelope.decision == "DENY":
+        verdict, tone = "BLOCKED", "bad"
+    elif envelope.approval_state in ("REQUIRED", "EXPIRED"):
+        verdict, tone = "APPROVAL REQUIRED", "warn"
+    else:
+        verdict, tone = "AUTHORIZED", "ok"
+
+    # An ALLOW carries no reason codes, because nothing objected. Saying so beats an empty list:
+    # every check that would have produced a code is a check this purchase passed.
+    reasons = humanise_all(envelope.reason_codes) or ("Within every limit in the current policy",)
+
+    remaining: int | None = None
+    if evidence.delegation is not None and evidence.delegation.chain:
+        remaining = evidence.delegation.chain[-1].remaining_minor
+
+    return ConsoleHeadline(
+        verdict=verdict,
+        tone=tone,
+        reasons=reasons,
+        provider_action_allowed=envelope.provider_action_allowed,
+        provider_action_blocked_reason=(
+            humanise(envelope.provider_action_blocked_reason)
+            if envelope.provider_action_blocked_reason is not None
+            else None
+        ),
+        delegation_root_actor_id=envelope.delegation_root_actor_id,
+        delegation_remaining_minor=remaining,
+        currency=envelope.currency,
+        has_payment_request=True,
+    )
+
+
 @router.get("/{tenant_id}", response_class=HTMLResponse)
 async def render_tenant_console(
     tenant_id: UUID,
@@ -283,6 +350,7 @@ async def render_tenant_console(
 
     tenant = await _load_tenant(session, tenant_id)
     entries = await _timeline(session, tenant_id)
+    headline = await _headline(session, tenant, entries)
     return HTMLResponse(
         headers=_PAGE_HEADERS,
         content=render_console(
@@ -293,6 +361,7 @@ async def render_tenant_console(
                 tenant_id=tenant.id, payment_request_id="{payment_request_id}"
             ),
             generated_at=datetime.now(UTC),
+            headline=headline,
         ),
     )
 

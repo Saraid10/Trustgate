@@ -648,6 +648,28 @@ MUTATIONS: tuple[Mutation, ...] = (
             "::test_the_console_says_whose_authority_a_delegated_purchase_ran_under",
         ),
     ),
+    Mutation(
+        name="the-banner-says-nothing-was-written-down",
+        invariant="An attack refused before a payment request exists says so, rather than blankly.",
+        path="api/routes/console.py",
+        original="            has_payment_request=False,\n",
+        mutated="            has_payment_request=True,\n",
+        guarding_tests=(
+            "tests/test_console_headline.py"
+            "::test_an_attack_refused_at_the_boundary_says_there_is_nothing_to_write_about",
+        ),
+    ),
+    Mutation(
+        name="reason-codes-reach-a-reader-as-sentences",
+        invariant="A refusal is shown in words, not as the code it is stored under.",
+        path="api/reason_text.py",
+        original="    known = _PLAIN.get(code)\n",
+        mutated="    known = None\n",
+        guarding_tests=(
+            "tests/test_console_headline.py"
+            "::test_every_reason_reads_as_a_sentence_even_when_nobody_wrote_one",
+        ),
+    ),
 )
 
 
