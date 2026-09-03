@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 
+from api.reason_text import humanise
 from schemas.domain import PaymentRequestEvidence
 
 _DECISION_TONE = {"ALLOW": "ok", "REQUIRE_APPROVAL": "warn", "DENY": "bad"}
@@ -177,8 +178,14 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
                 "Provider action",
                 "<strong class='verdict'>ALLOWED</strong>"
                 if envelope.provider_action_allowed
+                # In words, like the console panel. The same field rendering as a sentence in one
+                # place and as `PAYMENT_ALREADY_SETTLED` in the other made the receipt - the
+                # artifact a reader actually lingers on - the less readable of the two.
                 else f"<strong class='verdict'>NOT ALLOWED</strong> "
-                f"<span class='muted'>{_text(envelope.provider_action_blocked_reason)}</span>",
+                f"<span class='muted'>{_text(humanise(envelope.provider_action_blocked_reason))}"
+                "</span>"
+                if envelope.provider_action_blocked_reason is not None
+                else "<strong class='verdict'>NOT ALLOWED</strong>",
             ),
         ]
     )
