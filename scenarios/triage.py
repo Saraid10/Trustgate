@@ -40,6 +40,43 @@ def _quote(lines: list[str]) -> None:
         print(f"      {line}")
 
 
+def _run(argv: list[str], *, install_hint: bool = True) -> tuple[bool, list[str]]:
+    """Run one step, and say plainly when it could not run rather than printing nothing.
+
+    The first version of this captured stdout and ignored both the exit code and stderr. A reader
+    whose environment was missing a dependency therefore saw a heading, a blank space, and no
+    explanation - the step had failed and the tour reported it as though it had succeeded quietly.
+    That is the worst available outcome for a command whose only job is a first impression, and it
+    is not hypothetical: it is what happened to the first person who ran it.
+
+    Returns whether the step ran, and the lines worth showing - which on failure are the error
+    rather than the silence.
+    """
+
+    completed = subprocess.run(  # noqa: S603
+        argv, capture_output=True, text=True, cwd=REPO_ROOT, check=False
+    )
+    printed = [line for line in completed.stdout.splitlines() if line.strip()]
+
+    # A non-zero exit is not automatically a failure to run. `scenarios.mutation` exits non-zero
+    # when an invariant is unguarded, which is a finding this tour exists to show. What separates
+    # the two is whether the step produced any output at all: a process that died on an import
+    # printed nothing, and one that ran and disagreed printed its reasons.
+    if completed.returncode == 0 or printed:
+        return True, printed
+
+    # The last stderr line is the one that names the cause; the traceback above it is noise to
+    # someone who has not read this codebase and is deciding whether to.
+    reason = next(
+        (line.strip() for line in reversed(completed.stderr.splitlines()) if line.strip()),
+        f"exited with code {completed.returncode}",
+    )
+    told = [f"could not run `{' '.join(argv[1:])}`", f"error: {reason}"]
+    if install_hint:
+        told += ["", "install the project's dependencies first:", '  pip install -e ".[dev]"']
+    return False, told
+
+
 def _postgres_is_up() -> bool:
     """Ask the database rather than assuming, so the tour degrades instead of erroring.
 
@@ -67,15 +104,11 @@ def _the_problem() -> None:
         "\n  One model response, handed to two payment adapters. The catalog description was\n"
         "  written by a supplier and contains an instruction. The agent follows it.\n"
     )
-    completed = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "demo.unguarded"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    tail = [line for line in completed.stdout.splitlines() if line.strip()][-14:]
-    _quote(tail)
+    ran, lines = _run([sys.executable, "-m", "demo.unguarded"])
+    _quote(lines[-14:] if ran else lines)
+    if not ran:
+        print()
+        return
     print(
         "\n  Nothing detected an attack. One interface had a field for the amount and the\n"
         "  other did not. That is the whole difference, and it is why this is an\n"
@@ -141,16 +174,13 @@ def _the_proof(postgres: bool) -> None:
         f"\n  Deleting {len(MUTATIONS)} safety guards, one at a time, and requiring the tests\n"
         "  that protect each one to fail.\n"
     )
-    completed = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "scenarios.mutation"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=False,
-    )
-    survivors = [line for line in completed.stdout.splitlines() if "SURVIVED" in line]
-    tail = [line for line in completed.stdout.splitlines() if line.strip()][-2:]
-    _quote(tail)
+    ran, lines = _run([sys.executable, "-m", "scenarios.mutation"])
+    if not ran:
+        _quote(lines)
+        print()
+        return
+    survivors = [line for line in lines if "SURVIVED" in line]
+    _quote(lines[-2:])
     if survivors:
         print("\n      unguarded invariants:")
         _quote(survivors)

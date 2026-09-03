@@ -2,7 +2,7 @@
 
 The complete phase and slice sequence from the current state to the finished project.
 
-**Status as of 2026-09-01.** Slices 1-6, the TrustGate authority upgrades, M0 through M4, and
+**Status as of 2026-09-04.** Slices 1-6, the TrustGate authority upgrades, M0 through M4, and
 the Tier A suite are complete. Since then, on the `slice-delegation` branch: multi-hop delegated
 authority, wired into authorization and re-checked at checkout; an HTTP grant/revoke API that is
 deliberately not an agent tool; delegation in the evidence receipt; a fixed-shape authorization
@@ -15,12 +15,12 @@ deliberate cut is in [`docs/limitations.md`](limitations.md).
 
 | Gate | Result |
 |---|---|
-| Full suite | 535 passed |
-| `mypy --strict` | clean, 54 source files |
+| Full suite | 574 passed |
+| `mypy --strict` | clean, 56 source files |
 | `ruff check .` | clean |
 | `ruff format --check .` | clean |
 | `alembic check` | no undeclared model drift |
-| Mutation suite | 52 mutations, every one caught |
+| Mutation suite | 53 mutations, every one caught |
 | Optimized-mode safety smoke test | clean under `python -O` |
 | Migration `base` -> `head` round trip | clean, all eighteen revisions reversible |
 | Concurrency invariants raced | 9 PostgreSQL multi-session races passed |

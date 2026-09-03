@@ -58,9 +58,14 @@ source files and a trigger already applied to a schema would not notice.
 
 ## The same three columns, both ways
 
-Every purchase attempt produces this record: what the agent **proposed**, what the server
-**derived**, and what the provider **actually did**. Reading them beside each other is what makes
-the boundary visible rather than asserted — the agent's column is short on purpose.
+Every **persisted** purchase request produces this record: what the agent **proposed**, what the
+server **derived**, and what the provider **actually did**. Reading them beside each other is what
+makes the boundary visible rather than asserted — the agent's column is short on purpose.
+
+A refusal at the tool boundary produces **no such record**, and that is the design rather than a
+gap: the request never became a row, so there is nothing to write three columns about. Those
+refusals are recorded separately, in the audit trail, which is why the right-hand column below can
+say a receipt does not exist while the left-hand one links to a preserved one.
 
 Both of these are real. The left is the payment captured on 3 September; the right is the injected
 catalog description from `python -m agent.demo --adversarial`.

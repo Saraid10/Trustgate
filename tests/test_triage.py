@@ -9,6 +9,7 @@ So this asserts the two properties that make it safe to hand to a stranger.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import scenarios.triage as triage
@@ -71,3 +72,49 @@ def test_postgres_detection_answers_rather_than_raising() -> None:
     """Called before anything is printed, so it must return a bool under every condition."""
 
     assert isinstance(triage._postgres_is_up(), bool)
+
+
+# --- the step that cannot run --------------------------------------------------------------
+
+
+def test_a_step_that_cannot_start_says_so_instead_of_printing_nothing() -> None:
+    """The failure a reader actually hit, and the worst possible one for this command.
+
+    The first version captured stdout and ignored both the exit code and stderr. In an environment
+    missing a dependency, `demo.unguarded` died on an import, produced no stdout, and the tour
+    printed a heading followed by blank space - reporting a failed step as a quiet success. The
+    person running it had no way to know anything was wrong, let alone what.
+    """
+
+    ran, lines = triage._run([sys.executable, "-c", "import a_module_that_is_not_installed"])
+
+    assert ran is False
+    assert lines, "a step that could not run printed nothing at all"
+
+    told = " ".join(lines)
+    assert "could not run" in told
+    assert "a_module_that_is_not_installed" in told, "the actual cause was thrown away"
+    assert 'pip install -e ".[dev]"' in told, "the reader was not told how to fix it"
+
+
+def test_a_step_that_runs_and_reports_a_failure_is_not_mistaken_for_a_broken_environment() -> None:
+    """`scenarios.mutation` exits non-zero when an invariant is unguarded.
+
+    That is a finding this tour exists to show, not a reason to print an install hint. The two are
+    told apart by whether the step produced output: a process that died on an import printed
+    nothing, one that ran and disagreed printed its reasons.
+    """
+
+    ran, lines = triage._run(
+        [sys.executable, "-c", "print('1 mutation survived'); raise SystemExit(1)"]
+    )
+
+    assert ran is True, "a step that ran and reported a finding was treated as a broken environment"
+    assert "1 mutation survived" in " ".join(lines)
+
+
+def test_a_successful_step_returns_its_own_output() -> None:
+    ran, lines = triage._run([sys.executable, "-c", "print('hello from the step')"])
+
+    assert ran is True
+    assert lines == ["hello from the step"]

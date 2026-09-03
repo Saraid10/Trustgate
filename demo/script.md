@@ -1,6 +1,14 @@
 # Demo script
 
-Six minutes, five beats, one browser tab and one terminal. Everything is synthetic.
+Seven beats, one browser tab and one terminal. Everything is synthetic.
+
+**On length.** The beats below are timed to six minutes and the submission asks for five. Do not
+speed up to fit - a rushed refusal is worse than a missing beat. Cut Beat 4 instead: it is pure
+narration, and both mechanisms it names are visible on screen during Beats 1 and 3 anyway. That
+lands at roughly 5:00 with nothing shown removed.
+
+If you would rather keep Beat 4, cut Beat 2's approval step and say the sentence over Beat 1's
+panel instead. Do not cut Beat 0 or Beat 3 for any reason; they are the demo.
 
 The order is deliberate: the problem is shown before the fix, because three clean refusals prove a
 system works and are weak at showing why anyone needs it.
