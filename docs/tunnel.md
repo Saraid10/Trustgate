@@ -31,8 +31,14 @@ winget install --id Cloudflare.cloudflared -e
 Start the tunnel and **leave the window open** — closing it kills the tunnel:
 
 ```bash
-cloudflared tunnel --url http://localhost:8000
+cloudflared tunnel --url http://localhost:8000 --protocol http2
 ```
+
+**`--protocol http2` is not optional on this network.** cloudflared defaults to QUIC over UDP,
+which on the recording machine's Wi-Fi connected once and then collapsed into a reconnect loop —
+thirty-one failed connections in five minutes. A quick tunnel's hostname is torn down with its
+connection, so Razorpay's dashboard rejected the URL with `no such host`, which was accurate rather
+than a Razorpay quirk. On HTTP/2 the same tunnel held with zero drops.
 
 It prints a URL like `https://some-random-words.trycloudflare.com`.
 
@@ -85,9 +91,13 @@ The two are not equivalent and the difference is worth stating plainly:
 The tunnel is strictly better evidence. `agent.capture` is what makes the demo survive a tunnel
 that will not come up five minutes before recording.
 
-## What is still not proven
+## Provider-originated delivery, proven
 
-`docs/evidence/m3-webhook-lifecycle.json` records a full `AUTHORIZED → PROVIDER_PENDING →
-CAPTURED` lifecycle whose payloads were signed locally. A run where **Razorpay itself** delivered
-the events has been set up for but never preserved. When it happens, save it separately — the
-evidence README has said so since 25 August and it is still true.
+This is now closed. `docs/evidence/m3-provider-delivered-webhook.json` records a Test Mode purchase
+on 3 September 2026 where Razorpay itself delivered `payment.authorized` and `payment.captured`
+through this tunnel, carrying the payment to `CAPTURED`.
+
+The two artifacts can be told apart from the data rather than from a note. Razorpay sends an
+`X-Razorpay-Event-Id` header and `webhook_event_identity` prefers it, so a provider-delivered event
+is stored as `razorpay:TXeYRRXpsQj929`. Nothing local sends that header, so a locally signed one
+falls back to `razorpay:<event>:<payment id>`.

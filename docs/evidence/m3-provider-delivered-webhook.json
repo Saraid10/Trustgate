@@ -1,0 +1,147 @@
+{
+  "approval": null,
+  "audit_trail": [
+    {
+      "correlation_id": "ab804b26-edc7-4162-a0f2-4cb57862316e",
+      "created_at": "2026-09-03T17:46:04.819508Z",
+      "event_kind": "payment_transition"
+    },
+    {
+      "correlation_id": "8ff0c42c-7a47-455a-9ca4-9a7a89a767f8",
+      "created_at": "2026-09-03T17:46:20.174371Z",
+      "event_kind": "checkout_authority_issued"
+    },
+    {
+      "correlation_id": "22a7cd91-6d30-49d3-8be4-d084ff887579",
+      "created_at": "2026-09-03T17:46:20.362992Z",
+      "event_kind": "razorpay_order_intent_recorded"
+    },
+    {
+      "correlation_id": "22a7cd91-6d30-49d3-8be4-d084ff887579",
+      "created_at": "2026-09-03T17:46:20.362992Z",
+      "event_kind": "checkout_authority_consumed"
+    },
+    {
+      "correlation_id": "22a7cd91-6d30-49d3-8be4-d084ff887579",
+      "created_at": "2026-09-03T17:46:21.225487Z",
+      "event_kind": "razorpay_order_created"
+    },
+    {
+      "correlation_id": "89234ffb-8a6f-4299-83bd-b9102ab43aad",
+      "created_at": "2026-09-03T17:52:24.962599Z",
+      "event_kind": "razorpay_webhook_verified"
+    },
+    {
+      "correlation_id": "89234ffb-8a6f-4299-83bd-b9102ab43aad",
+      "created_at": "2026-09-03T17:52:24.962599Z",
+      "event_kind": "payment_transition"
+    },
+    {
+      "correlation_id": "e08ee403-1865-47ce-ba1d-382a259527dd",
+      "created_at": "2026-09-03T17:52:25.646327Z",
+      "event_kind": "razorpay_webhook_verified"
+    },
+    {
+      "correlation_id": "e08ee403-1865-47ce-ba1d-382a259527dd",
+      "created_at": "2026-09-03T17:52:25.646327Z",
+      "event_kind": "payment_transition"
+    },
+    {
+      "correlation_id": "5f4a8df3-138c-453b-8633-3fe8ef9802ed",
+      "created_at": "2026-09-03T17:52:35.966524Z",
+      "event_kind": "razorpay_callback_verified"
+    }
+  ],
+  "authority": {
+    "approval_id": null,
+    "checkout_authority_id": "162149a6-7e00-48c3-90c0-20e6f573ae2e",
+    "expires_at": "2026-09-03T18:01:20.273452Z",
+    "policy_version": 2,
+    "snapshot_hash": "9babdfd144dff977f1a87b0e02f514fadacb798dc085abba6831083fa482ace1",
+    "used_at": "2026-09-03T17:46:20.386662Z"
+  },
+  "decision": {
+    "correlation_id": "ab804b26-edc7-4162-a0f2-4cb57862316e",
+    "decided_at": "2026-09-03T17:46:04.819508Z",
+    "decision": "ALLOW",
+    "policy_version": 2,
+    "reasons": []
+  },
+  "delegation": null,
+  "derived": {
+    "amount_minor": 39900,
+    "catalog_item_id": "d3f0d3f0-0000-4000-8000-000000000004",
+    "catalog_name": "Cloud Starter",
+    "currency": "INR",
+    "merchant_display_name": "Campus Cloud",
+    "merchant_id": "d3f0d3f0-0000-4000-8000-000000000002",
+    "order_ref": "catalog:CLOUD-STARTER",
+    "request_revision": 1
+  },
+  "envelope": {
+    "amount_minor": 39900,
+    "approval_state": "NOT_REQUIRED",
+    "authority_expires_at": "2026-09-03T18:01:20.273452Z",
+    "currency": "INR",
+    "decision": "ALLOW",
+    "delegation_id": null,
+    "delegation_root_actor_id": null,
+    "merchant_display_name": "Campus Cloud",
+    "merchant_id": "d3f0d3f0-0000-4000-8000-000000000002",
+    "payment_request_id": "0457ee28-5d6c-4bb0-bd21-474b2a6077b3",
+    "policy_version": 2,
+    "provider_action_allowed": false,
+    "provider_action_blocked_reason": "PAYMENT_ALREADY_SETTLED",
+    "reason_codes": []
+  },
+  "generated_at": "2026-09-03T17:53:45.709635Z",
+  "payment": {
+    "authorized_amount_minor": 39900,
+    "captured_amount_minor": 39900,
+    "payment_id": "5af0cc8d-4bf3-46d4-aea7-5d69ffe77eae",
+    "refunded_amount_minor": 0,
+    "state": "CAPTURED",
+    "updated_at": "2026-09-03T17:52:25.646327Z"
+  },
+  "payment_request_id": "0457ee28-5d6c-4bb0-bd21-474b2a6077b3",
+  "policy": {
+    "approval_required_above_minor": 50000,
+    "currency": "INR",
+    "expiry": "2026-09-04T18:45:51.442140Z",
+    "max_amount_minor": 100000,
+    "max_daily_spend_minor": 200000,
+    "version": 2
+  },
+  "proposed": {
+    "actor_id": "trustgate-demo-buyer",
+    "idempotency_key": "1e61af3f-a45d-4403-97a7-50b649b06cf2",
+    "purpose": "Buy Starter credits for the robotics club.",
+    "quantity": 1,
+    "requested_at": "2026-09-03T17:46:04.819508Z",
+    "sku": "CLOUD-STARTER",
+    "source": "MCP_AGENT"
+  },
+  "provider_events": [
+    {
+      "event_type": "payment.authorized",
+      "processed_at": "2026-09-03T17:52:25.022119Z",
+      "provider_event_id": "razorpay:TXeYRRXpsQj929",
+      "received_at": "2026-09-03T17:52:24.962599Z"
+    },
+    {
+      "event_type": "payment.captured",
+      "processed_at": "2026-09-03T17:52:25.697151Z",
+      "provider_event_id": "razorpay:TXeYS5AXVpMnpv",
+      "received_at": "2026-09-03T17:52:25.646327Z"
+    }
+  ],
+  "provider_order": {
+    "amount_minor": 39900,
+    "created_at": "2026-09-03T17:46:20.362992Z",
+    "currency": "INR",
+    "provider_state": "CONFIRMED",
+    "razorpay_order_id": "order_TXeS2utUCdrkse",
+    "receipt": "tg_162149a67e0048c390c020e6f573ae2e"
+  },
+  "tenant_id": "d3f0d3f0-0000-4000-8000-000000000001"
+}

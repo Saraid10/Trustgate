@@ -18,6 +18,11 @@ you have to discover is worse than one that is written down.
 - **Not a fraud model.** Nothing here scores risk or detects anomalies.
 - **Not a legal-consent system.** Approval here is a separation-of-duties control, not consent
   capture.
+- **Provider delivery is proven, in Test Mode.** Razorpay has delivered signed
+  `payment.authorized` and `payment.captured` events to this application through a public
+  tunnel, carrying a payment to `CAPTURED`; the artifact is
+  `docs/evidence/m3-provider-delivered-webhook.json`. What that does not establish is
+  anything about Live Mode.
 - **Not Live Mode.** Test Mode only. `.env.example` says a `rzp_live_` key must never be placed in
   this repository, and nothing in the codebase is designed for one.
 
