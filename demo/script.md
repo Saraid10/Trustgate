@@ -9,7 +9,25 @@ system works and are weak at showing why anyone needs it.
 
 ## Before you record
 
-Run these once and leave them running.
+**Activate the virtual environment first, in every terminal you will use.** This is not optional
+and it is the failure that looks worst on camera: bare `python` on this machine is the system
+interpreter, which does not have the project's dependencies, so `python -m agent.stage` exits with
+an import traceback before anything else has a chance to go wrong.
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Your prompt should now start with `(.venv)`. Confirm the interpreter is the right one:
+
+```bash
+python -c "import sys; print(sys.executable)"
+```
+
+It must print a path inside `.venv`. If it prints `C:\Python314\python.exe`, the activation did
+not take and every command below will fail.
+
+Then run these once and leave them running.
 
 ```bash
 docker compose up -d
@@ -288,6 +306,8 @@ Close on the limits, deliberately:
 | Console shows old rows | `python -m agent.stage`, refresh |
 | `python -m agent.approve` says nothing is waiting | Beat 2's purchase did not create one — re-run it |
 | Console 404s | `ENABLE_CONSOLE=true` missing; `docker compose up -d --force-recreate api` |
+| `ModuleNotFoundError` on any `python -m ...` | The venv is not active in that terminal. `.venv\Scripts\Activate.ps1`, then re-run. |
+| Anything hangs, or Docker errors about the pipe | Docker Desktop died — it does that on a machine this size. Relaunch Docker Desktop, wait for the whale, `docker compose up -d`. |
 | Approval refused `APPROVER_IS_REQUESTER` | `DEMO_APPROVER_ID` equals `MCP_ACTOR_ID` — change one |
 | Anything hangs | Docker Desktop stopped. Restart it, `docker compose up -d` |
 
