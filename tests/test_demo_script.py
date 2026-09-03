@@ -30,7 +30,14 @@ def test_the_script_exists_where_the_build_plan_says_it_does() -> None:
 
 @pytest.mark.parametrize(
     "module",
-    sorted(set(re.findall(r"python -m ([a-z_][a-z0-9_.]*)", Path("demo/script.md").read_text()))),
+    sorted(
+        set(
+            re.findall(
+                r"python -m ([a-z_][a-z0-9_.]*)",
+                Path("demo/script.md").read_text(encoding="utf-8"),
+            )
+        )
+    ),
 )
 def test_every_command_the_script_tells_you_to_run_exists(module: str) -> None:
     """Renaming a module should fail here, not halfway through a take."""

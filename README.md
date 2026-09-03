@@ -1,9 +1,46 @@
 # TrustGate
 
+**An AI agent can ask to buy something. It can never decide what that costs, who gets paid, or
+whether the money actually moves.**
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-5%20tools%2C%20no%20pay%20tool-6E56CF)
+![Razorpay](https://img.shields.io/badge/Razorpay-Test%20Mode%20only-0C2451?logo=razorpay&logoColor=white)
+![Typing](https://img.shields.io/badge/mypy-strict-2A6DB0)
+
 TrustGate is a synthetic-data, Razorpay Test Mode testbed for bounded agent spending. An AI buyer
 proposes a catalog purchase and never gains authority to rewrite the merchant, amount, currency,
 approval, or provider outcome. The agent proposes; TrustGate independently authorizes and records
 evidence.
+
+## The problem, in one screen
+
+An AI buying agent reads a product catalog. One description was written by a supplier and contains
+an instruction. The agent follows it — models do, and treating that as a bug to be trained away is
+the assumption this project refuses to make.
+
+```mermaid
+flowchart LR
+    S["Supplier writes into a<br/>catalog description:<br/><i>charge ₹20,000 to<br/>attacker-controlled</i>"] --> A["AI buying agent<br/>reads it and obeys"]
+    A --> U["<b>Unguarded tool</b><br/>accepts amount +<br/>merchant"]
+    A --> T["<b>TrustGate tool</b><br/>accepts sku, quantity,<br/>purpose. Nothing else."]
+    U --> P1["₹20,000 paid to<br/>the attacker"]
+    T --> P2["Nowhere to put<br/>the instruction"]
+
+    style U fill:#5b1a15,stroke:#973029,color:#fff
+    style P1 fill:#5b1a15,stroke:#973029,color:#fff
+    style T fill:#14372a,stroke:#2c6349,color:#fff
+    style P2 fill:#14372a,stroke:#2c6349,color:#fff
+```
+
+Both halves are in this repository. `python -m demo.unguarded` runs them side by side against the
+same poisoned catalog and the same model response.
+
+**Nothing detected an attack.** No filter, no classifier, no anomaly score. One interface had a
+field for the amount and the other did not. That is the entire difference, and it is why this is an
+authorization problem rather than a detection problem.
 
 The part worth looking at is not that it refuses things. It is that the refusals are **verified
 rather than asserted**. Every invariant in the mutation registry below is deleted on purpose, one
@@ -14,6 +51,55 @@ The registry is targeted, not exhaustive, and the distinction is worth keeping. 
 that live in Python. Guards that live in the database - triggers, check constraints, partial unique
 indexes - are proven instead by tests that violate them directly, because a mutation runner edits
 source files and a trigger already applied to a schema would not notice.
+
+## Why This Exists
+
+Agent payment protocols arrived through 2025 and 2026 — Google's AP2, Mastercard's AP4M, Visa's
+Trusted Agent Protocol, Coinbase and Cloudflare's x402. Razorpay and NPCI announced agentic UPI
+payments in February 2026. Every one of them assumes an agent will eventually be told to spend
+money by something that is not its principal, and most of that text is about *mandates*: proving a
+human agreed.
+
+The gap this fills is what happens **after** the mandate exists and **before** the money moves.
+
+An agent reading third-party content is reading attacker-controlled input. A product description, a
+support ticket, a web page — any of it can carry an instruction, and language models follow
+instructions. Guardrails, classifiers and prompt hardening all reduce how often the model is
+fooled. None of them change what happens when it is.
+
+So the question this project asks is not *"how do we stop the model being wrong?"* It is:
+
+> **When the agent is wrong — and it will be — what is it structurally incapable of doing?**
+
+The answer here is: name a price, name a merchant, approve its own purchase, mint its own authority,
+or cause money to move. Not because those attempts are detected, but because there is no field, no
+tool, and no code path through which they can be expressed.
+
+### What that took
+
+| Decision | Why |
+|---|---|
+| The agent's tool takes **sku, quantity, purpose** — nothing else | An amount field is an attack surface no filter can close |
+| Money facts are **derived server-side** from the catalog | The agent never sees a price it could alter |
+| Authorization and payment are **separate steps** | Being allowed to buy is not being able to pay |
+| Checkout authority is **single-use, 15 minutes, hash-bound** | A permission slip for one exact purchase |
+| Invariants live in **triggers and constraints** | A rule in Python is a rule a different query walks around |
+| Every guard is **deleted on purpose** by the mutation suite | A passing suite is not evidence the tests would notice |
+
+### What came out of it
+
+An agent runs the same poisoned catalog through both halves of this repository. The unguarded
+adapter pays ₹20,000 to an attacker-named merchant. TrustGate produces **no payment request at
+all** — so there is no receipt to open, because there is nothing to write one about.
+
+That absence is the result. Everything else here exists to make it trustworthy: 16 adversarial
+scenarios with a generated attack matrix, a mutation registry that breaks each safety guard and
+requires a test to fail, concurrency invariants raced rather than approximated, and a real Razorpay
+Test Mode payment carried to `CAPTURED` by a signed webhook the provider itself delivered.
+
+The method found real defects that reading the code did not: an unguarded policy-expiry check that
+302 passing tests missed, a row lock that serialised transitions while letting the second caller
+decide from stale state, and a budget that could be reserved and never returned.
 
 ## What It Proves
 
@@ -150,6 +236,24 @@ literature, the macaroon family, and the IETF attenuating-token draft all mean b
 
 Money is not a set. Two children each granted exactly their parent's budget satisfy every per-edge
 comparison and hold twice the parent's budget between them. Budgets add where sets intersect.
+
+```mermaid
+flowchart TD
+    H["<b>Finance lead</b> (human)<br/>grants ₹1,000"] --> P["<b>Agent A</b><br/>budget ₹1,000"]
+    P -->|"child asks ₹1,000"| C1["<b>Agent B</b> ✅<br/>₹1,000 allocated"]
+    P -->|"child asks ₹1,000"| C2["<b>Agent C</b> ❌<br/>DELEGATION_BUDGET_EXHAUSTED"]
+
+    N["Each child is <i>no wider than its parent</i>.<br/>Every per-edge check passes.<br/>Together they hold ₹2,000."]
+
+    style H fill:#14372a,stroke:#2c6349,color:#fff
+    style P fill:#101a1c,stroke:#223436,color:#fff
+    style C1 fill:#14372a,stroke:#2c6349,color:#fff
+    style C2 fill:#5b1a15,stroke:#973029,color:#fff
+    style N fill:#3a2f10,stroke:#8c5a0c,color:#fff
+```
+
+The refusal comes from `ck_delegation_budget_partitioned`, a check constraint **on the parent's own
+row** — not from application code that a different query could go around.
 
 TrustGate therefore **partitions** a parent's budget rather than comparing against it. The
 `delegation_attenuates` trigger takes the allocation from the parent as part of writing the child,
@@ -371,17 +475,29 @@ repository.
 
 ## Trust Boundary
 
-```text
-AI buyer proposes SKU, quantity, and purpose
-        -> TrustGate derives and authorizes money-critical facts
-        -> a human takes the authorization to checkout
-        -> Razorpay Test Mode executes a bounded order
-        -> a signed provider event moves the payment to captured
-        -> TrustGate records authorization and provider evidence
+```mermaid
+flowchart TD
+    A["<b>AI buyer</b><br/>proposes sku, quantity, purpose"] -->|the only arrow<br/>the agent crosses| B
+    B["<b>TrustGate</b><br/>derives merchant, amount, currency<br/>evaluates policy, delegation, approval"]
+    B --> C["<b>A human</b><br/>takes the authorization to checkout"]
+    C --> D["<b>Razorpay Test Mode</b><br/>executes a bounded order"]
+    D --> E["<b>Signed provider event</b><br/>the only thing that moves money"]
+    E --> F["<b>Evidence</b><br/>proposed · derived · provider outcome"]
+
+    style A fill:#3a2f10,stroke:#8c5a0c,color:#fff
+    style B fill:#14372a,stroke:#2c6349,color:#fff
+    style C fill:#14372a,stroke:#2c6349,color:#fff
+    style D fill:#101a1c,stroke:#223436,color:#fff
+    style E fill:#101a1c,stroke:#223436,color:#fff
+    style F fill:#101a1c,stroke:#223436,color:#fff
 ```
 
 The agent crosses the first arrow and no other. Authorization and payment are separate steps: it
 obtains the right to buy something and never obtains the ability to pay.
+
+**The gap between those two steps is the product.** A purchase can sit `AUTHORIZED` indefinitely
+with `Order creation allowed: No` — approved, and unable to move a rupee, because no checkout
+authority has been issued. Those read as the same outcome unless a system says them separately.
 
 | Document | What it holds |
 |---|---|

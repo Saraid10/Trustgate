@@ -21,8 +21,15 @@ def _readme() -> str:
     return README.read_text(encoding="utf-8")
 
 
-_LINKED_FILES = sorted(set(re.findall(r"\]\((?!http)([^)#]+\.md)\)", README.read_text())))
-_COMMANDS = sorted(set(re.findall(r"python -m ([a-z_][a-z0-9_.]*)", README.read_text())))
+# Explicit encoding. These run at collection time on Windows, where the default is cp1252 and
+# a single character outside it - a rupee sign, an em dash, a status glyph - turns a README
+# edit into a collection error rather than a test failure, which is a much worse thing to debug.
+_LINKED_FILES = sorted(
+    set(re.findall(r"\]\((?!http)([^)#]+\.md)\)", README.read_text(encoding="utf-8")))
+)
+_COMMANDS = sorted(
+    set(re.findall(r"python -m ([a-z_][a-z0-9_.]*)", README.read_text(encoding="utf-8")))
+)
 
 
 @pytest.mark.parametrize("relative", _LINKED_FILES)
