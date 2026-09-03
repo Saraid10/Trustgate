@@ -28,6 +28,10 @@ source files and a trigger already applied to a schema would not notice.
   including for a payment already authorized: the chain is re-asked before checkout authority is
   issued and again before it is consumed, and a payment stopped that way gives both budgets back.
 - Unsafe attempts are rejected before a provider order can be created and leave an auditable trace.
+- The whole path runs against the real provider: Razorpay Test Mode creates the order, a human pays
+  it, and Razorpay's own signed `payment.captured` is what moves the money — verified over raw
+  bytes, cross-checked against the server-derived amount, and preserved as
+  [`docs/evidence/m3-provider-delivered-webhook.json`](docs/evidence/m3-provider-delivered-webhook.json).
 
 ## How AI Is Used Here
 
@@ -301,9 +305,15 @@ helper is the only place in the source that can take a lock.
 
 ## Current Scope
 
-TrustGate uses only synthetic tenants, merchants, and INR prices. It is a local safety testbed, not
-a payment processor, compliance product, legal-consent system, fraud model, or Live Mode payment
-integration.
+**Test Mode by choice, not by limitation.** A project whose subject is bounded spending authority
+has no business holding live keys, and `.env.example` says a `rzp_live_` key must never be placed
+here — a guard the code enforces rather than the documentation requesting. Tenants, merchants, and
+prices are synthetic for the same reason.
+
+Within that boundary the system is complete and exercised end to end against the real provider. It
+is an authorization layer, deliberately not a payment processor, compliance product, legal-consent
+system, or fraud model — each of those is a different product, and claiming any of them would be
+the kind of overreach the rest of this README is built to avoid.
 
 [`docs/positioning.md`](docs/positioning.md) explains why a project like this is worth building
 now, with each item of Indian payments context labelled by the evidence behind it — an NPCI

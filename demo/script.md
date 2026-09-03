@@ -322,11 +322,16 @@ Say the number the terminal is printing, not one you remember. It has been sixte
 twenty-six, thirty-three, thirty-seven, forty-one, forty-four, forty-seven, fifty and fifty-two on the way here, and being contradicted by your own screen is the one
 mistake in this beat a viewer will actually notice.
 
-Close on the limits, deliberately:
+Then close on the boundary — **as a decision you made, not a confession**. Say it at the same pace
+as everything else; the moment you sound apologetic it reads as a weakness rather than as scope:
 
-> Test Mode only, synthetic data, header-based tenant identity that is not production
-> authentication, and receipts that are traceable but not yet tamper-evident.
-> `docs/limitations.md` names every cut.
+> Test Mode by choice — a project about bounded spending authority has no business holding live
+> keys, and the code refuses one. Tenant identity is a header rather than production
+> authentication, and receipts are traceable but not yet tamper-evident. Every cut is in
+> `docs/limitations.md`, named before anyone had to find it.
+
+That last clause is the point, and it is worth landing: a system that tells you what it does not do
+is a system you can believe about what it does.
 
 
 ---
