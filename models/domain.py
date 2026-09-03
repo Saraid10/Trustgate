@@ -391,6 +391,14 @@ class Approval(Base):
             name="fk_approval_payment_request_tenant",
             ondelete="RESTRICT",
         ),
+        # The same citation, on the record of a human decision. An approval granted under a policy
+        # version that does not exist is an approval nobody can later audit against anything.
+        ForeignKeyConstraint(
+            ["tenant_id", "policy_version"],
+            ["spending_policy.tenant_id", "spending_policy.version"],
+            name="fk_approval_policy_tenant",
+            ondelete="RESTRICT",
+        ),
         Index("ix_approval_tenant_payment_request", "tenant_id", "payment_request_id"),
         Index(
             "uq_approval_active_per_payment",
@@ -419,6 +427,16 @@ class AuthorizationDecision(Base):
             ["tenant_id", "payment_request_id"],
             ["payment_request.tenant_id", "payment_request.id"],
             name="fk_authorization_decision_payment_request_tenant",
+            ondelete="RESTRICT",
+        ),
+        # A decision names the policy version it was made under, and that citation is the whole
+        # basis for `CHECKOUT_AUTHORITY_POLICY_DRIFT`. `checkout_authority` already keys it to a
+        # real policy row; a decision did not, so it could cite a version this tenant never had -
+        # and the drift check would then be comparing against a number rather than a policy.
+        ForeignKeyConstraint(
+            ["tenant_id", "policy_version"],
+            ["spending_policy.tenant_id", "spending_policy.version"],
+            name="fk_authorization_decision_policy_tenant",
             ondelete="RESTRICT",
         ),
         Index(
@@ -450,6 +468,11 @@ class Payment(Base):
     __tablename__ = "payment"
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_payment_tenant"),
+        # One request, one payment. The application has only ever created one, and nothing stopped
+        # a second - which would give a single purchase two independent state machines, each able
+        # to authorize, capture, and release budget without the other knowing. Every guard in this
+        # project locks *a* payment row; none of them would notice a rival.
+        UniqueConstraint("tenant_id", "payment_request_id", name="uq_payment_one_per_request"),
         ForeignKeyConstraint(
             ["tenant_id", "payment_request_id"],
             ["payment_request.tenant_id", "payment_request.id"],

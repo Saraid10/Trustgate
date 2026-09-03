@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 from fixtures import FixtureData
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ from delegation.chain import (
     revoke,
     spend,
 )
-from models.domain import AuditEvent, Delegation, DelegationSpend, SpendingPolicy
+from models.domain import AuditEvent, Delegation, DelegationSpend
 
 NOW = datetime.now(UTC).replace(microsecond=0)
 """One clock read for the whole module, for the reason the daily-spend race test pins one: two
@@ -508,22 +508,22 @@ async def test_a_root_cannot_exceed_the_policy_it_is_cut_from(
 
 
 @pytest.mark.asyncio
-async def test_a_chain_dies_when_the_policy_it_was_cut_from_is_superseded(
+async def test_a_chain_dies_when_the_policy_it_was_cut_from_runs_out(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    """Revocation that reaches work already in flight, which a signed mandate cannot offer."""
+    """Revocation that reaches work already in flight, which a signed mandate cannot offer.
+
+    Asked by moving the clock past the policy's expiry rather than by editing the policy. The
+    earlier version disabled `spending_policy_immutable` and renumbered version 1 to 2, which
+    simulated the right refusal through a write the system will never make - and which
+    `fk_authorization_decision_policy_tenant` now refuses outright, because a decision cites that
+    version and renumbering it underneath would leave the citation pointing at nothing.
+
+    `spend` checks the policy before it checks any hop, so this is the policy refusing rather than
+    the hop, even though both have run out by then.
+    """
 
     root = await _root(async_session, seeded_fixture_data)
-    await async_session.execute(
-        text("ALTER TABLE spending_policy DISABLE TRIGGER spending_policy_immutable")
-    )
-    policy = seeded_fixture_data.tenant_a_policy
-    await async_session.execute(
-        update(SpendingPolicy).where(SpendingPolicy.id == policy.id).values(version=2)
-    )
-    await async_session.execute(
-        text("ALTER TABLE spending_policy ENABLE TRIGGER spending_policy_immutable")
-    )
 
     with pytest.raises(DelegationRefused) as refused:
         await spend(
@@ -533,7 +533,7 @@ async def test_a_chain_dies_when_the_policy_it_was_cut_from_is_superseded(
             amount_minor=1_000,
             reference=uuid4(),
             sku="CLOUD-STARTER",
-            as_of=NOW,
+            as_of=seeded_fixture_data.tenant_a_policy.expiry + timedelta(seconds=1),
         )
 
     assert refused.value.reason == "DELEGATION_POLICY_DRIFT"

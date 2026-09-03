@@ -92,19 +92,36 @@ async def test_illegal_transition_keeps_state_and_writes_one_audit_event(
     assert audit_count == 1
 
 
+async def _the_payment(session: AsyncSession, data: FixtureData, **fields: object) -> Payment:
+    """Put the fixture's own payment into the state a test needs.
+
+    Adding a second payment row for the same request used to work and now does not:
+    `uq_payment_one_per_request` refuses it, because one purchase with two independent state
+    machines is the thing that constraint exists to prevent. These tests never wanted a second
+    payment - they wanted a particular state - so they take the one that is already there.
+    """
+
+    payment = await session.scalar(
+        select(Payment).where(Payment.payment_request_id == data.payment_request.id)
+    )
+    assert payment is not None
+    for name, value in fields.items():
+        setattr(payment, name, value)
+    await session.flush()
+    return payment
+
+
 @pytest.mark.asyncio
 async def test_capture_cannot_exceed_authorized_amount(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    payment = _payment(
+    payment = await _the_payment(
+        async_session,
+        seeded_fixture_data,
         state="PROVIDER_PENDING",
         authorized_amount_minor=100,
         captured_amount_minor=101,
     )
-    payment.tenant_id = seeded_fixture_data.tenant_a.id
-    payment.payment_request_id = seeded_fixture_data.payment_request.id
-    async_session.add(payment)
-    await async_session.flush()
 
     with pytest.raises(CaptureExceedsAuthorizedError):
         await transition(
@@ -120,16 +137,14 @@ async def test_capture_cannot_exceed_authorized_amount(
 async def test_refund_cannot_exceed_captured_amount(
     async_session: AsyncSession, seeded_fixture_data: FixtureData
 ) -> None:
-    payment = _payment(
+    payment = await _the_payment(
+        async_session,
+        seeded_fixture_data,
         state="CAPTURED",
         authorized_amount_minor=100,
         captured_amount_minor=100,
         refunded_amount_minor=101,
     )
-    payment.tenant_id = seeded_fixture_data.tenant_a.id
-    payment.payment_request_id = seeded_fixture_data.payment_request.id
-    async_session.add(payment)
-    await async_session.flush()
 
     with pytest.raises(RefundExceedsCapturedError):
         await transition(

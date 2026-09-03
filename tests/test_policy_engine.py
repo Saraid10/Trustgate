@@ -697,7 +697,28 @@ async def test_approval_consumption_rejects_invalid_approval_states(
     if mutation == "expired":
         approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     if mutation == "mismatch":
-        approval.policy_version += 1
+        # A real superseding version, not just a larger integer. `fk_approval_policy_tenant` now
+        # requires an approval to cite a policy this tenant actually published, so bumping the
+        # number alone is refused by the schema before the mismatch is ever evaluated - and the
+        # scenario this test means to describe is a policy that moved on, which is a row that
+        # exists.
+        superseding = SpendingPolicy(
+            id=uuid4(),
+            tenant_id=seeded_fixture_data.tenant_a.id,
+            version=seeded_fixture_data.tenant_a_policy.version + 1,
+            max_amount_minor=seeded_fixture_data.tenant_a_policy.max_amount_minor,
+            currency=seeded_fixture_data.tenant_a_policy.currency,
+            max_daily_spend_minor=seeded_fixture_data.tenant_a_policy.max_daily_spend_minor,
+            expiry=seeded_fixture_data.tenant_a_policy.expiry,
+            approval_required_above_minor=(
+                seeded_fixture_data.tenant_a_policy.approval_required_above_minor
+            ),
+        )
+        async_session.add(superseding)
+        # The approval is left citing the version it was granted under. `_consume_approval`
+        # compares it against the *current* version, so publishing a newer policy is what creates
+        # the mismatch - which is also how it happens in life: nobody edits an approval, a policy
+        # moves on underneath one.
     await async_session.flush()
     with pytest.raises(error_type):
         await transition(
