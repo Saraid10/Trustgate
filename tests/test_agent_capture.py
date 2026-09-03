@@ -223,9 +223,12 @@ def test_the_command_says_it_signed_the_events_itself() -> None:
     assert source_file is not None
     source = Path(source_file).read_text(encoding="utf-8")
 
-    assert "Razorpay's servers cannot reach a laptop" in source, (
+    assert "Razorpay did not send them" in source, (
         "the spoken provenance line left the command's output"
     )
+    # Not "cannot reach a laptop". With the Cloudflare tunnel up it can, and a disclaimer that
+    # overstates its own constraint is still a disclaimer that is wrong.
+    assert "unless a tunnel is running" in source
     assert "signed here with this project's own" in source
     assert "provider-originated" in source
 

@@ -152,7 +152,17 @@ Refresh the console. The panel now reads `Order creation allowed: Yes`, the row 
 
 The payment is still `AUTHORIZED`, not captured, and that is deliberate: the browser callback came
 back verified and the server refuses to treat a callback as capture evidence. Only a signed
-server-to-server event may move money, and Razorpay cannot reach a laptop. So deliver those events:
+server-to-server event may move money.
+
+**If the Cloudflare tunnel is running** ([`docs/tunnel.md`](../docs/tunnel.md)), Razorpay delivers
+those events itself and the row reaches `CAPTURED` on its own within a second or two. That is the
+strongest version of this beat: say so, refresh, and move on.
+
+> Razorpay just told the server the money moved. That event is signed, verified over the raw bytes,
+> and its amount is checked against the order the server derived — not against anything the agent
+> or the browser said.
+
+**If the tunnel is not up**, deliver the same two events locally:
 
 ```bash
 python -m agent.capture
@@ -329,6 +339,7 @@ Close on the limits, deliberately:
 | `python -m agent.approve` says nothing is waiting | Beat 2's purchase did not create one — re-run it |
 | Console 404s | `ENABLE_CONSOLE=true` missing; `docker compose up -d --force-recreate api` |
 | `ModuleNotFoundError` on any `python -m ...` | The venv is not active in that terminal. `.venv\Scripts\Activate.ps1`, then re-run. |
+| Razorpay never delivers a webhook | The tunnel URL changed on restart. Re-point the dashboard webhook, or just run `python -m agent.capture` |
 | Anything hangs, or Docker errors about the pipe | Docker Desktop died — it does that on a machine this size. Relaunch Docker Desktop, wait for the whale, `docker compose up -d`. |
 | Approval refused `APPROVER_IS_REQUESTER` | `DEMO_APPROVER_ID` equals `MCP_ACTOR_ID` — change one |
 | Anything hangs | Docker Desktop stopped. Restart it, `docker compose up -d` |

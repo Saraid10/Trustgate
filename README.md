@@ -379,5 +379,6 @@ obtains the right to buy something and never obtains the ability to pay.
 | [`docs/limitations.md`](docs/limitations.md) | Every deliberate cut, including the unflattering ones |
 | [`docs/positioning.md`](docs/positioning.md) | Indian payments context, labelled by the evidence behind it |
 | [`docs/architecture.md`](docs/architecture.md) | How the pieces fit |
+| [`docs/tunnel.md`](docs/tunnel.md) | Reaching this machine from Razorpay, and why cloudflared rather than ngrok |
 | [`docs/threat-model.md`](docs/threat-model.md) | What is defended and against whom |
 | [`docs/build-plan.md`](docs/build-plan.md) | The formal plan this was built against |

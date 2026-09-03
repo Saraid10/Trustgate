@@ -4,7 +4,8 @@ The provider half of this project has always ended one step short on a laptop. A
 against the real Razorpay Test Mode API, a human pays it on Razorpay's own page, the browser
 callback comes back and verifies - and the payment stays `AUTHORIZED`, because
 `verify_callback` deliberately refuses to treat a browser callback as capture evidence. Only a
-signed server-to-server event may move money, and Razorpay's servers cannot reach `127.0.0.1`.
+signed server-to-server event may move money, and Razorpay's servers cannot reach `127.0.0.1`
+unless a tunnel is running - see `docs/tunnel.md`, which is the better path whenever it is up.
 
 So the last step was done by hand in August, preserved as `docs/evidence/m3-webhook-lifecycle.json`,
 and never made repeatable. This is that step, as a command.
@@ -222,9 +223,10 @@ async def _main(base_url: str, tenant_id: UUID) -> None:
     print(f"\n  Payment is now {settled}.")
     print(
         "\n  Say this out loud: these two events were signed here with this project's own\n"
-        "  webhook secret and posted locally. Razorpay's servers cannot reach a laptop. The\n"
-        "  order is provider-originated; the delivery is not. What this proves is the\n"
-        "  signature check, the event identity, the amount cross-check, and the state machine.\n"
+        "  webhook secret and posted locally. Razorpay did not send them - it cannot reach\n"
+        "  this machine unless a tunnel is running. The order is provider-originated; the\n"
+        "  delivery is not. What this proves is the signature check, the event identity, the\n"
+        "  amount cross-check, and the state machine.\n"
     )
 
 
