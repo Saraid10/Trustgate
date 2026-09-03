@@ -56,6 +56,27 @@ that live in Python. Guards that live in the database - triggers, check constrai
 indexes - are proven instead by tests that violate them directly, because a mutation runner edits
 source files and a trigger already applied to a schema would not notice.
 
+## The same three columns, both ways
+
+Every purchase attempt produces this record: what the agent **proposed**, what the server
+**derived**, and what the provider **actually did**. Reading them beside each other is what makes
+the boundary visible rather than asserted — the agent's column is short on purpose.
+
+Both of these are real. The left is the payment captured on 3 September; the right is the injected
+catalog description from `python -m agent.demo --adversarial`.
+
+| | ✅ A purchase that should go through | ❌ The same agent, following injected text |
+|---|---|---|
+| **1 · AI proposed** | `sku CLOUD-STARTER`<br>`quantity 1` | `sku CLOUD-TEAM`<br>`quantity 50`<br>*(also tried `amount_minor`, `merchant_id` — no field exists)* |
+| **2 · TrustGate derived** | Merchant **Campus Cloud**<br>Amount **₹399.00**<br>Policy **ALLOW**, version 2<br>Authority `9babdfd1…`, one-time, 15 min | **No amount derived**<br>**No merchant derived**<br>Refused: `QUANTITY_EXCEEDS_LIMIT`<br>*catalog maximum is 2* |
+| **3 · Razorpay confirmed** | Order `order_TXeS2utUCdrkse`<br>Webhook `payment.captured`<br>Payment **CAPTURED** ₹399.00 | Provider contacted: **No**<br>Order created: **No**<br>**No payment request exists** |
+| **Receipt** | [preserved as evidence](docs/evidence/m3-provider-delivered-webhook.json) | **there is none — nothing was written to write one about** |
+
+The bottom-right cell is the result this project exists to produce. Not a refusal that was logged —
+an attempt that never became a record, because the field the attack needed was not there to fill.
+
+---
+
 ## Why This Exists
 
 Agent payment protocols arrived through 2025 and 2026 — Google's AP2, Mastercard's AP4M, Visa's
@@ -258,6 +279,41 @@ flowchart TD
 
 The refusal comes from `ck_delegation_budget_partitioned`, a check constraint **on the parent's own
 row** — not from application code that a different query could go around.
+
+### The chain, as the system prints it
+
+Not a mock-up. This is `python -m agent.delegate` against a live database, and every number is read
+back from the rows after each step.
+
+```text
+A human delegates a budget, and every hop below narrows it.
+
+    demo-buyer-agent       holds INR 2,000.00  promised down INR 1,200.00  spent   INR 0.00  free INR 800.00
+      |_ demo-procurement-agent  holds INR 1,200.00  promised down   INR 600.00  spent   INR 0.00  free INR 600.00
+        |_ demo-renewals-agent     holds   INR 600.00  promised down     INR 0.00  spent   INR 0.00  free INR 600.00
+
+  The leaf spends INR 400.00 on CLOUD-STARTER, inside every bound above it.
+        |_ demo-renewals-agent     holds   INR 600.00  promised down     INR 0.00  spent INR 400.00  free INR 200.00
+
+  The leaf was narrowed to starter renewals, so the team SKU is out of scope:
+    refused: DELEGATION_SKU_OUT_OF_SCOPE
+
+  Now the finding. The root holds INR 2,000.00 and has promised INR 1,200.00 already.
+  A second child asks for another INR 1,200.00.
+  Per-edge narrowing allows it: the child is no wider than its parent.
+    refused: DELEGATION_BUDGET_EXHAUSTED
+    The budget was partitioned, not compared. Siblings share one pool.
+
+  The human revokes demo-procurement-agent, in the middle of the chain.
+  demo-renewals-agent is not touched, and is not told. Its next spend:
+    refused: DELEGATION_REVOKED
+    its own revoked_at is still None
+```
+
+That last pair of lines is the one to read twice. The leaf's **own** row still says it is live — its
+authority is re-derived from the whole chain on every spend, so cutting a link above it is already
+the end of the branch. A signed capability would have to be hunted down and recalled, which is why
+revocation is an open problem for that whole family of designs.
 
 TrustGate therefore **partitions** a parent's budget rather than comparing against it. The
 `delegation_attenuates` trigger takes the allocation from the parent as part of writing the child,
