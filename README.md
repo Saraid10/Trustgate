@@ -15,6 +15,10 @@ proposes a catalog purchase and never gains authority to rewrite the merchant, a
 approval, or provider outcome. The agent proposes; TrustGate independently authorizes and records
 evidence.
 
+> **In a hurry?** `make triage` is a guided tour whose first two steps need no database, no Docker,
+> and no credentials. [`JUDGE.md`](JUDGE.md) maps every claim on this page to the command that
+> proves it.
+
 ## The problem, in one screen
 
 An AI buying agent reads a product catalog. One description was written by a supplier and contains
@@ -440,6 +444,17 @@ docker compose exec -T api python -m alembic upgrade head
 docker compose exec -T api python -m pytest -q
 ```
 
+`make verify` runs the full gate — lint, format, types, migration parity, the suite, and the
+mutation registry. **Start the stack first**: `alembic check` and the tests both talk to Postgres,
+and a gate that skipped them when the database was absent would not be a gate.
+
+```bash
+docker compose up -d
+make verify
+```
+
+`make triage` needs no such setup for its first two steps, which is the point of it.
+
 The local API health check is available at `http://127.0.0.1:8000/health`.
 
 For the demonstration, use `python -m agent.stage` — it stages a fixed tenant so the console URL
@@ -501,6 +516,7 @@ authority has been issued. Those read as the same outcome unless a system says t
 
 | Document | What it holds |
 |---|---|
+| [`JUDGE.md`](JUDGE.md) | Every claim, and the command that regenerates it |
 | [`docs/decision-log.md`](docs/decision-log.md) | Every real choice, with the alternatives rejected and why |
 | [`docs/limitations.md`](docs/limitations.md) | Every deliberate cut, including the unflattering ones |
 | [`docs/positioning.md`](docs/positioning.md) | Indian payments context, labelled by the evidence behind it |

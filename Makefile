@@ -29,6 +29,15 @@ mutation:
 # This exists because a chain like `pytest -q | tail -2 && git commit` does not do what it looks
 # like it does: the pipeline's exit code is tail's, which is always zero, so a failing suite lets
 # the commit through. Reading the printed summary is not a substitute for an exit code.
+# A guided tour for someone who has four minutes and has never seen this folder. `verify` answers
+# "does this still hold" for whoever maintains it; this answers "is any of this true" for whoever
+# is deciding whether to keep reading. The first two steps need no database, because the strongest
+# thing here is a failure that runs on a laptop with nothing installed.
+triage:
+	python -m scenarios.triage
+
+# Needs the stack up first: `docker compose up -d`. Both `alembic check` and the suite talk to
+# Postgres, and a gate that silently skips them is not a gate.
 verify:
 	python -m ruff check .
 	python -m ruff format --check .
