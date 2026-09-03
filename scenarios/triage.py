@@ -15,6 +15,7 @@ Run with `python -m scenarios.triage`, or `make triage`.
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -163,7 +164,12 @@ def main() -> None:
     # Line-buffered on purpose. Python block-buffers stdout when it is not a terminal, so a reader
     # who pipes this to `tee` or a log sees nothing at all until the mutation step finishes minutes
     # later - which reads as a hang on the one command written to make a good first impression.
-    sys.stdout.reconfigure(line_buffering=True)
+    #
+    # Guarded rather than ignored: `sys.stdout` is only a TextIOWrapper when it is a real stream,
+    # and under pytest's capture it is not. Asking anyway would raise inside a test that imports
+    # this module for any other reason.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     print(
         "\n  TrustGate - a guided tour\n"
         "  An AI agent can ask to buy something. It can never decide what that costs,\n"
