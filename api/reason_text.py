@@ -58,6 +58,10 @@ _PLAIN: dict[str, str] = {
     # --- permission to call the provider ------------------------------------------------------
     "NO_CHECKOUT_AUTHORITY_ISSUED": "No checkout permission has been issued for this purchase",
     "PAYMENT_NOT_AUTHORIZED": "This payment was never authorized, so there is nothing to pay",
+    # A settled payment is the opposite of an unauthorized one, and the panel sits directly above a
+    # row reading CAPTURED - so getting this wrong makes the console contradict itself on screen.
+    "PAYMENT_ALREADY_SETTLED": "The money has already moved for this purchase",
+    "PAYMENT_ALREADY_WITH_THE_PROVIDER": "This payment is already with the provider",
     # Distinct from the above on purpose. "This payment was never authorized" implies a
     # payment exists, and for an attack refused at the tool boundary none was ever created -
     # which is the stronger claim and the one the panel is there to make.

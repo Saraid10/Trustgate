@@ -670,6 +670,17 @@ MUTATIONS: tuple[Mutation, ...] = (
             "::test_every_reason_reads_as_a_sentence_even_when_nobody_wrote_one",
         ),
     ),
+    Mutation(
+        name="a-settled-payment-is-not-called-unauthorized",
+        invariant="A captured payment blocks provider action as settled, not as never authorized.",
+        path="api/routes/evidence.py",
+        original="    elif payment.state in _SETTLED_STATES:\n",
+        mutated="    elif False:\n",
+        guarding_tests=(
+            "tests/test_authorization_envelope.py"
+            "::test_a_payment_that_reached_the_provider_is_not_called_unauthorized",
+        ),
+    ),
 )
 
 

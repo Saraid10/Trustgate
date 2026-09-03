@@ -61,6 +61,10 @@ from schemas.domain import (
 
 router = APIRouter(prefix="/api/v1/payment-requests", tags=["evidence"])
 
+# States a payment reaches only by going through the provider. Reaching one is the opposite of
+# never having been authorized, and the envelope has to tell a reader which of the two happened.
+_SETTLED_STATES = frozenset({"CAPTURED", "REFUNDED", "PARTIALLY_REFUNDED"})
+
 
 async def build_payment_request_evidence(
     session: AsyncSession, *, tenant: Tenant, payment_request_id: UUID
@@ -218,7 +222,16 @@ async def build_payment_request_evidence(
     # get. It is still a description of stored rows rather than a verdict: `consume_checkout_
     # authority` re-runs all of this under row locks, and it is the one that decides.
     blocked: str | None = None
-    if payment is None or payment.state != "AUTHORIZED":
+    if payment is None:
+        blocked = "PAYMENT_NOT_AUTHORIZED"
+    elif payment.state in _SETTLED_STATES:
+        # Not "never authorized". A captured payment was authorized *and* paid, and saying
+        # otherwise next to a row reading CAPTURED is the panel contradicting the table beneath it.
+        # No further provider action is allowed here because the money already moved.
+        blocked = "PAYMENT_ALREADY_SETTLED"
+    elif payment.state == "PROVIDER_PENDING":
+        blocked = "PAYMENT_ALREADY_WITH_THE_PROVIDER"
+    elif payment.state != "AUTHORIZED":
         blocked = "PAYMENT_NOT_AUTHORIZED"
     elif authority is None:
         blocked = "NO_CHECKOUT_AUTHORITY_ISSUED"

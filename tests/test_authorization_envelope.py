@@ -291,3 +291,71 @@ async def test_the_console_says_nothing_about_authority_when_there_was_none(
 
     assert page.status_code == 200
     assert "under authority from" not in page.text
+
+
+# --- a payment that already went through -------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("CAPTURED", "PAYMENT_ALREADY_SETTLED"),
+        ("REFUNDED", "PAYMENT_ALREADY_SETTLED"),
+        ("PROVIDER_PENDING", "PAYMENT_ALREADY_WITH_THE_PROVIDER"),
+    ],
+    ids=["captured", "refunded", "in-flight"],
+)
+async def test_a_payment_that_reached_the_provider_is_not_called_unauthorized(
+    client: AsyncClient,
+    async_session: AsyncSession,
+    seeded_fixture_data: FixtureData,
+    state: str,
+    expected: str,
+) -> None:
+    """Caught by looking at the rendered console rather than at an assertion.
+
+    Every state other than AUTHORIZED used to report PAYMENT_NOT_AUTHORIZED, so a captured payment
+    produced a panel reading "this payment was never authorized, so there is nothing to pay" -
+    directly above a row reading CAPTURED. Both cannot be true, and the false one was the one in
+    the largest text on the page.
+
+    A settled payment blocks further provider action because the money already moved, which is the
+    opposite of never having been authorized, and a reader is owed the difference.
+    """
+
+    from sqlalchemy import update
+
+    from models.domain import Payment
+
+    request_id = await _buy(client, seeded_fixture_data)
+    await async_session.execute(
+        update(Payment).where(Payment.payment_request_id == request_id).values(state=state)
+    )
+    await async_session.flush()
+
+    envelope = await _envelope(client, seeded_fixture_data, request_id)
+
+    assert envelope["provider_action_allowed"] is False
+    assert envelope["provider_action_blocked_reason"] == expected
+
+
+@pytest.mark.asyncio
+async def test_a_genuinely_unauthorized_payment_still_says_so(
+    client: AsyncClient, async_session: AsyncSession, seeded_fixture_data: FixtureData
+) -> None:
+    """The other half, so the fix above cannot be bought by losing the true case."""
+
+    from sqlalchemy import update
+
+    from models.domain import Payment
+
+    request_id = await _buy(client, seeded_fixture_data)
+    await async_session.execute(
+        update(Payment).where(Payment.payment_request_id == request_id).values(state="DENIED")
+    )
+    await async_session.flush()
+
+    envelope = await _envelope(client, seeded_fixture_data, request_id)
+
+    assert envelope["provider_action_blocked_reason"] == "PAYMENT_NOT_AUTHORIZED"

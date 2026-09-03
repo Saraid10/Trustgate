@@ -150,6 +150,28 @@ Refresh the console. The panel now reads `Order creation allowed: Yes`, the row 
 
 > That line flipped because a checkout authority was issued. It is the only thing that changed.
 
+The payment is still `AUTHORIZED`, not captured, and that is deliberate: the browser callback came
+back verified and the server refuses to treat a callback as capture evidence. Only a signed
+server-to-server event may move money, and Razorpay cannot reach a laptop. So deliver those events:
+
+```bash
+python -m agent.capture
+```
+
+**Say the provenance before you say the result — the command prints it, so read it:**
+
+> These two events are signed here with this project's own webhook secret and posted locally.
+> Razorpay did not send them. The order is real and provider-originated; the delivery is not.
+> What this proves is the signature check over raw bytes, the event identity that keeps the
+> authorization and the capture from deduplicating against each other, the amount cross-checked
+> against the order the server derived, and the state machine carrying the payment through.
+
+Refresh. The row reads `payment CAPTURED`, and the panel reads `Order creation allowed: No` —
+*The money has already moved for this purchase*.
+
+> And now it refuses again, for the opposite reason. It was refused before because no authority had
+> been issued; it is refused now because the money has already moved.
+
 Click **Receipt**. Let the three columns sit on screen for a beat.
 
 > Proposed, derived, provider outcome. The evidence record is assembled from the rows themselves,
@@ -282,12 +304,12 @@ make mutation
 > Sixteen adversarial scenarios, and a generated attack matrix a test keeps honest, so the README
 > cannot claim an attack that is not covered.
 >
-> And this: fifty-two deliberate breaks of the safety code, each requiring its tests to fail. A
+> And this: fifty-three deliberate breaks of the safety code, each requiring its tests to fail. A
 > passing suite says the code behaves as written. It does not say the tests would object if it
 > stopped doing something important.
 
 Say the number the terminal is printing, not one you remember. It has been sixteen, eighteen,
-twenty-six, thirty-three, thirty-seven, forty-one, forty-four, forty-seven and fifty on the way here, and being contradicted by your own screen is the one
+twenty-six, thirty-three, thirty-seven, forty-one, forty-four, forty-seven, fifty and fifty-two on the way here, and being contradicted by your own screen is the one
 mistake in this beat a viewer will actually notice.
 
 Close on the limits, deliberately:

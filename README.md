@@ -288,6 +288,7 @@ a test asserts it matches, so it cannot claim a guarded invariant that is not ac
 | `the-timeline-names-the-authority-a-purchase-ran-under` | A delegated purchase says whose authority it spent, on the timeline. |
 | `the-banner-says-nothing-was-written-down` | An attack refused before a payment request exists says so, rather than blankly. |
 | `reason-codes-reach-a-reader-as-sentences` | A refusal is shown in words, not as the code it is stored under. |
+| `a-settled-payment-is-not-called-unauthorized` | A captured payment blocks provider action as settled, not as never authorized. |
 <!-- mutation-table:end -->
 
 The first run of this suite found a live defect. `SELECT ... FOR UPDATE` through the ORM acquires
