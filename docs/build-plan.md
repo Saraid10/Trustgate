@@ -2,21 +2,29 @@
 
 The complete phase and slice sequence from the current state to the finished project.
 
-**Status as of 2026-08-26.** Slices 1-6, the TrustGate authority upgrades, M0, M1, M2, M3, and M4
-are complete. Per-milestone evidence is in
-[`docs/m0-verification.md`](m0-verification.md), [`docs/m1-verification.md`](m1-verification.md),
-and [`docs/m2-verification.md`](m2-verification.md). The current and target architecture is in
-[`docs/architecture.md`](architecture.md).
+**Status as of 2026-09-01.** Slices 1-6, the TrustGate authority upgrades, M0 through M4, and
+the Tier A suite are complete. Since then, on the `slice-delegation` branch: multi-hop delegated
+authority, wired into authorization and re-checked at checkout; an HTTP grant/revoke API that is
+deliberately not an agent tool; delegation in the evidence receipt; a fixed-shape authorization
+envelope; and a console that leads with the decision in plain words.
+
+Per-milestone evidence is in [`docs/m0-verification.md`](m0-verification.md),
+[`docs/m1-verification.md`](m1-verification.md), and [`docs/m2-verification.md`](m2-verification.md).
+The current and target architecture is in [`docs/architecture.md`](architecture.md), and every
+deliberate cut is in [`docs/limitations.md`](limitations.md).
 
 | Gate | Result |
 |---|---|
-| Full suite | 201 passed |
-| `mypy --strict` | clean, 39 source files |
+| Full suite | 535 passed |
+| `mypy --strict` | clean, 54 source files |
 | `ruff check .` | clean |
+| `ruff format --check .` | clean |
+| `alembic check` | no undeclared model drift |
+| Mutation suite | 52 mutations, every one caught |
 | Optimized-mode safety smoke test | clean under `python -O` |
-| Migration `base` -> `head` round trip | clean, all eleven revisions reversible |
-| Concurrency invariants raced | 4 PostgreSQL multi-session races passed |
-| Tier A scenarios | A1, A2, A5, A11b, A15 passing; matrix generated from the registry |
+| Migration `base` -> `head` round trip | clean, all eighteen revisions reversible |
+| Concurrency invariants raced | 9 PostgreSQL multi-session races passed |
+| Tier A scenarios | all 16 (A1-A15, A11a/A11b) passing; matrix generated from the registry |
 | Razorpay Test Mode | order creation proven against the real provider; signed webhooks carry a payment to CAPTURED; checkout page renders without authorizing |
 | Evidence receipt | JSON endpoint and HTML receipt complete, from one shared assembly |
 | Slice verification notes | slices 1-6, hardening, M0, M1, M2, M3, M4 |
@@ -219,15 +227,15 @@ Lead with the thesis, never a feature list.
 
 ### Tasks
 
-- [ ] Fix `localhost` → `127.0.0.1` in `tests/fixtures.py` and `.env.example`
-- [ ] Fix the `pyproject.toml` readme declaration
-- [ ] Add `pytest-timeout` to dev dependencies with a default timeout
-- [ ] Resolve `ruff format` drift
-- [ ] Write the four racing tests above
-- [ ] Write `README.md`
-- [ ] Add `.gitattributes` with `* text=auto eol=lf` (CI runs on Linux; every file currently warns on CRLF)
-- [ ] Backfill slice verification notes for the catalog, checkout-authority, and Razorpay slices
-- [ ] Resolve the two open decisions below, then push to a public repository
+- [x] Fix `localhost` → `127.0.0.1` in `tests/fixtures.py` and `.env.example`
+- [x] Fix the `pyproject.toml` readme declaration
+- [x] Add `pytest-timeout` to dev dependencies with a default timeout
+- [x] Resolve `ruff format` drift
+- [x] Write the four racing tests above — nine race tests exist now
+- [x] Write `README.md`
+- [x] Add `.gitattributes` with `* text=auto eol=lf`
+- [x] Backfill slice verification notes for the catalog, checkout-authority, and Razorpay slices
+- [x] Resolve the two open decisions below, then push to a public repository
 
 ### Definition of Done
 

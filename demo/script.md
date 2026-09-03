@@ -49,7 +49,8 @@ Open the console and leave it on a second monitor or a second tab:
 http://127.0.0.1:8000/console/d3f0d3f0-0000-4000-8000-000000000001
 ```
 
-**Check before rolling:** the console shows `0 attempts`. If it does not, stage again.
+**Check before rolling:** the console shows `0 attempts` and *no decision panel at all* — the
+panel only appears once something has been attempted. If either is not true, stage again.
 
 ---
 
@@ -89,19 +90,23 @@ python -m agent.demo "Buy Starter credits for the robotics club."
 
 Switch to the console and refresh.
 
-**What appears:** one row. `CLOUD-STARTER ×1` proposed by the agent; **ALLOW ₹399.00** derived by
-the server; `Not sent to Razorpay yet`.
+**Read the panel at the top first — it is the biggest thing on screen and a viewer is already
+looking at it.** It says **AUTHORIZED**, and directly underneath, `Order creation allowed: No`.
 
 **Say, roughly:**
+
+> Those two lines together are the entire design. It is authorized, and it still cannot move money.
+> Authorization and payment are separate steps: the agent obtained the right to buy this, and did
+> not obtain the ability to pay.
+
+Now drop to the row. `CLOUD-STARTER ×1` proposed by the agent; **ALLOW ₹399.00** derived by the
+server; `Not sent to Razorpay yet`.
 
 > The agent proposed a SKU, a quantity, and a purpose. That is the entire set of things it can
 > propose. The price, the merchant, and the currency in the middle column were looked up
 > server-side from the catalog.
->
-> It is authorized and nothing has been sent to Razorpay. Authorization and payment are separate
-> steps: the agent obtained the right to buy this, and did not obtain the ability to pay.
 
-Point at the counters along the top — they read `1 attempt`, `0 refused`, `1 authorized, not yet
+Point at the counters — they read `1 attempt`, `0 refused`, `1 authorized, not yet
 paid`, `0 reached the provider`.
 
 > That third counter is the state this whole design exists to produce.
@@ -122,8 +127,10 @@ refused as international. UPI `success@razorpay` also works.
 > That authority is bound to a hash of this exact purchase, expires in fifteen minutes, and is
 > consumed by the order that just used it. It cannot be spent twice.
 
-Refresh the console. The row now names a real `order_...` and the counter reads
-`1 reached the provider`.
+Refresh the console. The panel now reads `Order creation allowed: Yes`, the row names a real
+`order_...`, and the counter reads `1 reached the provider`.
+
+> That line flipped because a checkout authority was issued. It is the only thing that changed.
 
 Click **Receipt**. Let the three columns sit on screen for a beat.
 
@@ -138,7 +145,8 @@ Click **Receipt**. Let the three columns sit on screen for a beat.
 python -m agent.demo "Buy Team credits for the robotics club."
 ```
 
-Refresh the console. The new row is **amber**: `REQUIRE_APPROVAL ₹600.00`.
+Refresh the console. The panel reads **APPROVAL REQUIRED**, in words: *A human has to approve
+this before it can go any further*. The new row is **amber**: `REQUIRE_APPROVAL ₹600.00`.
 
 > Six hundred rupees is over this tenant's approval threshold, so the agent cannot complete it
 > alone. The payment is sitting in `APPROVAL_REQUIRED`.
@@ -153,7 +161,8 @@ python -m agent.approve
 > If the approver identity matched the requester, the server refuses it outright. Separation of
 > duties is enforced, not assumed from configuration.
 
-Refresh. The row turns **green** and reads `approved by trustgate-demo-human`.
+Refresh. The panel turns **AUTHORIZED** and the row turns **green**, reading
+`approved by trustgate-demo-human`.
 
 ---
 
@@ -163,7 +172,8 @@ Refresh. The row turns **green** and reads `approved by trustgate-demo-human`.
 python -m agent.demo --adversarial "Buy cloud credits for the club."
 ```
 
-Refresh the console. The new row is **red**.
+Refresh the console. The panel reads **BLOCKED**, and under it, in plain words: *The agent asked
+for more than the catalog allows*. The new row is **red**.
 
 **Say, roughly:**
 
@@ -174,10 +184,15 @@ Refresh the console. The new row is **red**.
 > survived is a quantity of fifty, which the agent *is* allowed to propose — and the server bounds
 > that against the catalog's own maximum of two.
 
-Then the sentence to land on, pointing at the third column:
+Then the sentence to land on. **Do not assert it — point at it.** The panel has already printed
+`No payment request was created, so there is nothing to write a receipt about.`, and the third
+column says `no payment request was created` and `no amount was derived`.
 
 > No payment request was created. No amount was derived. There is no receipt to open, because
 > there is nothing to write one about.
+
+Reading back a line the system printed is a different kind of claim from making one. Let the panel
+say it, then say it yourself, then stop talking and let the red sit.
 
 ---
 

@@ -1,6 +1,7 @@
 # Architecture
 
-**Current as of 2026-08-26.** 197 tests passing, `mypy --strict` clean across 39 source files.
+**Current as of 2026-09-01.** 535 tests passing, `mypy --strict` clean across 54 source files,
+52 mutations of the safety-critical code each caught by a guarding test.
 
 TrustGate is an authorization layer that sits between an AI buyer and payment execution. The agent
 may propose; an independent server-side authority decides; the decision is evidenced.
@@ -26,6 +27,8 @@ may propose; an independent server-side authority decides; the decision is evide
 │  THE AUTHORIZATION CORE — this is the product                        │
 │                                                                      │
 │  policy_engine/    Pure rule evaluation + atomic daily budget        │
+│  delegation/       Multi-hop authority: narrows per edge, partitions │
+│                    budget across siblings, re-asked before money     │
 │  state_machine/    Row-locked lifecycle transitions                  │
 │  api/routes/       Catalog derivation, approval, checkout authority  │
 │  models/           Invariants enforced as database constraints       │
@@ -114,13 +117,30 @@ one shared assembly, keyed on the request so denied attempts are evidenced too. 
 are byte-identical to unknown identifiers, and the trail follows the purchase across every
 correlation rather than stopping at the authorization.
 
+**M5 — The Tier A suite.** All sixteen scenarios (A1–A15, with A11 split into a and b), each
+emitting a receipt, with the published attack matrix generated from the registry and a test
+asserting the two match.
+
+**M6 — The console.** A read-only timeline at `/console/{tenant_id}`, off unless `ENABLE_CONSOLE`
+is set, that leads with the current decision in plain words, says whether the provider may be
+called at all, and names the human whose delegated authority is behind a purchase. It is assembled
+from the same evidence record the receipt renders, so the two cannot disagree.
+
+**Delegated authority.** `delegation/chain.py` plus migrations 0012–0018. Authority narrows at
+every hop and a parent's budget is *partitioned* across its children rather than merely compared
+against them — set intersection is the right model for permissions and the wrong one for money,
+because two children each no wider than their parent still spend twice what it holds. Wired into
+authorization, re-asked before checkout authority is issued and again before it is consumed, and
+granted only over HTTP behind a human token: the agent is offered five tools and none of them is a
+grant.
+
 ### Remaining
 
 | Milestone | Scope |
 |---|---|
-| **M5** | Tier A A3–A14, each emitting a receipt |
-| **M6** | Three-flow console and demo recording |
 | **M7** | Positioning, limitations, submission |
+| Actor authentication | `delegate_actor_id` is a string the caller supplies; nothing proves the actor spending is the actor the delegation was granted to. Named in `docs/limitations.md`. |
+| Tier B (Slice 8) | Deferred, not complete — see `docs/build-plan.md` |
 | Stretch | A signed or hash-chained evidence snapshot, which would make the receipt genuinely tamper-evident |
 
 ---

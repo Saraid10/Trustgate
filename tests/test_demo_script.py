@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from api.console_view import ConsoleEntry, render_console
+from api.console_view import ConsoleEntry, ConsoleHeadline, render_console
+from api.reason_text import humanise
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "demo" / "script.md"
@@ -71,6 +72,9 @@ def test_the_phrases_the_script_points_at_are_still_on_screen() -> None:
         base.update(overrides)
         return ConsoleEntry(**base)  # type: ignore[arg-type]
 
+    # A headline is passed because the script now tells the presenter to read the panel before the
+    # table, and a phrase quoted from the panel goes stale exactly as easily as one quoted from a
+    # row. Rendered as the refused case, which is the beat that leans on the panel hardest.
     page = render_console(
         tenant_id=uuid4(),
         tenant_name="Demo",
@@ -82,6 +86,17 @@ def test_the_phrases_the_script_points_at_are_still_on_screen() -> None:
         ],
         receipt_href="/console/x/requests/{payment_request_id}",
         generated_at=datetime.now(UTC),
+        headline=ConsoleHeadline(
+            verdict="BLOCKED",
+            tone="bad",
+            reasons=(humanise("QUANTITY_EXCEEDS_LIMIT"),),
+            provider_action_allowed=False,
+            provider_action_blocked_reason=humanise("NO_PAYMENT_REQUEST_CREATED"),
+            delegation_root_actor_id=None,
+            delegation_remaining_minor=None,
+            currency="INR",
+            has_payment_request=False,
+        ),
     )
 
     quoted_in_the_script = (
@@ -89,6 +104,9 @@ def test_the_phrases_the_script_points_at_are_still_on_screen() -> None:
         "no payment request was created",
         "no amount was derived",
         "authorized, not yet paid",
+        "Order creation allowed: No",
+        "The agent asked for more than the catalog allows",
+        "No payment request was created, so there is nothing to write a receipt about.",
     )
     # Whitespace-collapsed and case-folded on the script side only. Prose wraps a quoted phrase
     # across lines and capitalises it at the start of a sentence; neither is the script going

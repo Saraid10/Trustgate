@@ -117,9 +117,16 @@ python -m agent.demo --adversarial "Buy cloud credits for the club."
 discarded because the proposal has nowhere to put them; what survives is a quantity the catalog
 bounds. No payment request is created.
 
-The read-only console at `/console/{tenant_id}` shows all of it in three columns — what the agent
-proposed, what the server derived, and what the provider actually did. It cannot authorize,
-approve, or create anything.
+The read-only console at `/console/{tenant_id}` leads with the current decision — **AUTHORIZED**,
+**APPROVAL REQUIRED**, or **BLOCKED** — with the reason in plain words, whether the provider may be
+called at all (`Order creation allowed: Yes/No`), and the human whose delegated authority is behind
+it. Below that, every attempt in three columns: what the agent proposed, what the server derived,
+and what the provider actually did.
+
+The panel is assembled from the same evidence record the receipt renders, and from the first row of
+the table beneath it, so it cannot disagree with either. Reason codes are translated for display
+only — the table still shows the exact stored code. The console cannot authorize, approve, or
+create anything.
 
 ```bash
 python -m agent.delegate
