@@ -317,9 +317,13 @@ cross-tenant chains. `docs/limitations.md` says both and so should you.
 
 ## Beat 6 · What is proven, and what is not (5:15 – 6:00)
 
-```bash
-make mutation
+```powershell
+python -m scenarios.mutation
 ```
+
+> `make` is not installed on the recording laptop, and `make mutation` would also chain a
+> full verification run afterwards. This is the target's first line and the only part you
+> want on camera.
 
 > Sixteen adversarial scenarios, and a generated attack matrix a test keeps honest, so the README
 > cannot claim an attack that is not covered.

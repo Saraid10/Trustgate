@@ -166,7 +166,7 @@ Nothing to run. Have the layer diagram from `docs/architecture.md` on screen, or
 
 ## 4:05 – 4:50 · What the tests are worth, and the limits
 
-**Run:** `make mutation`
+**Run:** `python -m scenarios.mutation`
 
 > "Which is how I know any of it holds. That's fifty-three deliberate breaks running — it deletes
 > each safety guard, one at a time, and requires the test protecting it to fail. A passing suite
