@@ -136,3 +136,50 @@ def test_it_still_refuses_the_claims_the_project_will_not_make() -> None:
 
     for forbidden in ("blocked the attack", "detected the attack", "caught the attack"):
         assert forbidden not in spoken, f"the pitch claims {forbidden!r}, which is not true"
+
+
+def _spoken_words() -> int:
+    """Every word inside a blockquote under a timed beat heading, minus the cut markers."""
+
+    total = 0
+    for block in re.split(r"\n## ", _pitch()):
+        if not re.match(r"\d:\d\d", block.splitlines()[0].strip()):
+            continue
+        spoken = " ".join(line[1:].strip() for line in block.splitlines() if line.startswith(">"))
+        total += len(re.sub(r"`?\[CUT [A-D] \u2192`?|`?\u2190 CUT [A-D]\]`?", "", spoken).split())
+    return total
+
+
+def test_the_length_it_claims_is_the_length_it_is() -> None:
+    """The reason this file was rewritten: it said 600 words while holding 1,234.
+
+    A script that lies about its own runtime is worse than one with no figure at all, because the
+    figure is what you plan the recording around. Nobody notices the drift until a take runs long,
+    and by then the tunnel is up and the database is seeded.
+    """
+
+    claimed = re.search(r"is \*\*(\d{3}) words\*\*", _pitch())
+
+    assert claimed, "the pitch no longer states its own spoken word count"
+    actual = _spoken_words()
+    # Wide enough that reflowing a line is not a failure, narrow enough that adding or removing a
+    # sentence is. Twenty words is about eight seconds of speech.
+    assert abs(int(claimed.group(1)) - actual) <= 20, (
+        f"the pitch claims {claimed.group(1)} spoken words; it holds {actual}"
+    )
+
+
+def test_it_still_fits_the_slot_it_is_written_for() -> None:
+    """Five minutes at a presenting pace is roughly 750 words, and this runs long on purpose.
+
+    The full text is a six-minute demo and says so. What must stay true is that the marked cuts
+    actually reach five minutes - otherwise the cut list is decoration.
+    """
+
+    for marker in ("[CUT A", "[CUT B", "[CUT C"):
+        assert marker in _pitch(), f"{marker} is gone, so the hard-five-minute path is broken"
+
+    # 150 words per minute, and the beats budget about twenty seconds of deliberate silence.
+    assert _spoken_words() / 150 * 60 + 20 <= 6 * 60, (
+        "the pitch has grown past six minutes even before the cuts"
+    )
