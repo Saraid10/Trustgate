@@ -44,8 +44,13 @@ class ConsoleHeadline:
     """
 
     verdict: str
-    """AUTHORIZED, APPROVAL REQUIRED, or BLOCKED. Not the raw decision: `REQUIRE_APPROVAL` that a
-    human has since granted is `AUTHORIZED` here, because that is what is true now."""
+    """AUTHORIZED, APPROVAL REQUIRED, or REFUSED. Not the raw decision: `REQUIRE_APPROVAL` that a
+    human has since granted is `AUTHORIZED` here, because that is what is true now.
+
+    REFUSED rather than BLOCKED, deliberately. Nothing here intercepts an attack: the amount and
+    merchant fields do not exist to be filled, and what survives is declined by an ordinary bound.
+    "Blocked" is firewall vocabulary and implies a detector this system does not have - and the
+    timeline row under this banner has always said REFUSED, so the banner now agrees with it."""
 
     tone: str
     reasons: tuple[str, ...]

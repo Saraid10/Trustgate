@@ -94,7 +94,7 @@ def test_the_phrases_the_script_points_at_are_still_on_screen() -> None:
         receipt_href="/console/x/requests/{payment_request_id}",
         generated_at=datetime.now(UTC),
         headline=ConsoleHeadline(
-            verdict="BLOCKED",
+            verdict="REFUSED",
             tone="bad",
             reasons=(humanise("QUANTITY_EXCEEDS_LIMIT"),),
             provider_action_allowed=False,

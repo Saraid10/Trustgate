@@ -202,7 +202,7 @@ async def test_a_refused_purchase_says_blocked_in_words(
 
     page = await _console(client, seeded_fixture_data)
 
-    assert "BLOCKED" in page
+    assert "REFUSED" in page
     assert "Order creation allowed: No" in page
     # Escaped, because the page is HTML and the sentence has an apostrophe in it. Asserting
     # the raw string would pass only for reasons that happen to contain no punctuation.
@@ -241,7 +241,7 @@ async def test_an_attack_refused_at_the_boundary_says_there_is_nothing_to_write_
 
     page = await _console(client, seeded_fixture_data)
 
-    assert "BLOCKED" in page
+    assert "REFUSED" in page
     assert humanise("QUANTITY_EXCEEDS_LIMIT") in page
     assert "nothing to write a receipt about" in page
 

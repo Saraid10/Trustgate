@@ -293,7 +293,7 @@ async def _headline(
     newest = entries[0]
     if newest.payment_request_id is None:
         return ConsoleHeadline(
-            verdict="BLOCKED",
+            verdict="REFUSED",
             tone="bad",
             reasons=humanise_all(newest.reasons),
             provider_action_allowed=False,
@@ -309,7 +309,7 @@ async def _headline(
     )
     envelope = evidence.envelope
     if envelope.decision == "DENY":
-        verdict, tone = "BLOCKED", "bad"
+        verdict, tone = "REFUSED", "bad"
     elif envelope.approval_state in ("REQUIRED", "EXPIRED"):
         verdict, tone = "APPROVAL REQUIRED", "warn"
     else:
