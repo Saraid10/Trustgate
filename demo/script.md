@@ -59,14 +59,16 @@ filming the last attempt's leftovers.
 python -m agent.stage
 ```
 
-It prints the console URL and the exact commands for each beat. Export the identity it gives you:
+It prints the console URL and the exact commands for each beat.
 
-```bash
-export MCP_TENANT_ID=d3f0d3f0-0000-4000-8000-000000000001
-```
+**You do not need to export anything.** `.env` already carries `MCP_TENANT_ID` and `MCP_ACTOR_ID`,
+and every `agent.*` command loads it. Earlier drafts of this file told you to `export` them, which
+is a bash builtin that does not exist in PowerShell — so following it literally in the terminal you
+are actually using produced an error before the demo began. If you ever do need to override one for
+a single shell, PowerShell spells it:
 
-```bash
-export MCP_ACTOR_ID=trustgate-demo-buyer
+```powershell
+$env:MCP_TENANT_ID = "d3f0d3f0-0000-4000-8000-000000000001"
 ```
 
 Open the console and leave it on a second monitor or a second tab:
