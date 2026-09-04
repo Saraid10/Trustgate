@@ -140,7 +140,17 @@ the first one, and do not fix length by talking faster.
 
 ## 3:05 – 4:05 · The architecture — this is the centre of the video
 
-Nothing to run. Have the layer diagram from `docs/architecture.md` on screen, or the console.
+Nothing to run, but **do not talk over a static screen for a minute.** Show the receipt: on the
+console, click **Receipt** on the Starter row. That page is the narration, already rendered.
+
+- The **Authorization decision** block at the top is the envelope: decision, policy version,
+  approval state, delegation, and `Provider action: NOT ALLOWED`.
+- Below it, three numbered panels: **1 · Proposed** *(chosen by the buying agent)*,
+  **2 · Derived and authorized** *(determined by TrustGate)*, **3 · Provider outcome** *(what
+  Razorpay actually did)*.
+
+Say the "three columns side by side" sentence while those three panels are on screen. Scroll slowly
+down the page as you talk; it fills the whole beat.
 
 > "So — the shape of it, because that's the actual contribution.
 >
