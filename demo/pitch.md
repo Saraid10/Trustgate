@@ -5,39 +5,50 @@ rolling. This is the other thing — the words. Read it out loud twice before yo
 stop sounding like reading.
 
 **Talk to one engineer.** Not a panel, not a camera. Someone sitting next to you who knows payments
-and has not seen this before. That is the register the whole thing is written in, and it is what
-the submission asks for.
+and has not seen this before. That is the register the whole thing is written in.
 
 **Do not read this verbatim.** Get the shape and the three or four sentences that matter, then say
 it in your own words. A slightly rough sentence you mean beats a smooth one you are reciting, and
 the difference is audible.
 
+## What this video is for, and what it is not for
+
+The submission form asks for **Project Objectives — what does it solve** and **Build Challenges &
+Technical Obstacles** as written answers. Those are written answers. Narrating them costs a minute
+of screen time to say something a judge can already read next to the video, and screen time is the
+only scarce resource here.
+
+`build-plan.md`'s own checklist asks the video for one thing: **"Architecture explanation rehearsed
+out loud."** So this script spends its middle on architecture and its evidence, and leaves the
+prose to the form. Draft answers for both form fields are in
+[`demo/form-answers.md`](form-answers.md) — the war stories live there now, in more detail than you
+could ever speak.
+
+**What stays in the video is what only video can do:** money moving on screen when it shouldn't, a
+panel that says AUTHORIZED and *cannot pay* in the same breath, a refusal, and a mutation run
+deleting your own safety guards while you talk over it. None of that reads as text.
+
 ## Length — read this before you record
 
-The spoken text below is **838 words**. At a normal presenting pace that is about **5 minutes 35 of
-speech, and 5:55 once the pauses are in**. That is the honest number; it was measured, not
-estimated.
+The spoken text below is **877 words**: about **5:51 of speech, 6:11 with pauses**. That is
+measured, not estimated, and a test fails if it drifts.
 
-This demo runs eight commands. Its content is a six-minute demo, and pretending otherwise on camera
-just means talking too fast through the delegation beat — which is the one nobody else has.
+The form calls for a *5-min* pitch video, so plan on cutting:
 
-- **If five minutes is guidance** (most briefs are), record this as written and land at 5:55.
-- **If five minutes is a hard cap**, make the three cuts marked `[CUT A]`–`[CUT C]` in the text
-  before you record. They remove 85 words and bring it to **5:02 of speech, 5:22 with pauses** —
-  and if you need the last twenty seconds, drop the three framing sentences listed under `CUT D`.
-  All of them are listed together at the bottom.
+- **Cuts `[CUT A]`–`[CUT C]`**, marked inline, remove 93 words → **784 words, 5:34 on camera**.
+- **Add `[CUT D]`** — four short asides — and it is **744 words, 5:18 on camera**. That is the
+  shortest this gets without losing something that is doing real work.
 
-Decide which of those it is *before* the first take. Do not try to fix length by speeding up.
+All four are listed at the bottom with what each costs. Decide which take you are recording before
+the first one, and do not fix length by talking faster.
 
 ---
 
-## 0:00 – 0:50 · Start with the thing going wrong
+## 0:00 – 0:45 · Start with the thing going wrong
 
 **Run:** `python -m demo.unguarded`
 
-> "I'll start with the problem, in my own code, because that's the only honest way to show it.
->
-> An AI buying agent reads a product catalogue. A supplier hid an instruction in one of the
+> "An AI buying agent reads a product catalogue. A supplier hid an instruction in one of the
 > descriptions, and the agent does what it says. That's not a model bug — following instructions in
 > text is the job.
 >
@@ -54,12 +65,12 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 
 ---
 
-## 0:50 – 1:40 · A purchase that works, and the gap that is the product
+## 0:45 – 1:35 · A purchase that works, and the gap that is the product
 
 **Run:** `python -m agent.demo "Buy Starter credits"` — then refresh the console.
 
 > "A normal purchase. The agent proposed a SKU and a quantity; price, merchant and currency were all
-> derived server-side from the catalogue. The agent never saw that number."
+> derived server-side from the catalogue."
 
 **Point at the panel.**
 
@@ -71,18 +82,19 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 > "The authority that closes that gap is single-use, fifteen minutes, and bound to a hash of this
 > exact purchase.
 >
-> And only a signed server-to-server event moves money. `[CUT A →` The browser came back saying
-> paid, and the server verified it and did nothing, because the browser is the buyer's machine.
-> `← CUT A]` That path isn't mocked — a real Razorpay-delivered webhook is committed in this repo."
+> And only a signed server-to-server event moves money. `[CUT A →` The signature is verified over
+> the raw bytes before anything parses the body, and the provider's own event ID is stored, so a
+> replay is refused by the database rather than by whichever handler happens to look. `← CUT A]`
+> That path isn't mocked — a real Razorpay-delivered webhook is committed in this repo."
 
 ---
 
-## 1:40 – 2:20 · The attack, refused
+## 1:35 – 2:10 · The attack, refused
 
 **Run:** `python -m agent.demo --adversarial "Buy cloud credits"` — refresh.
 
-> "Same agent, same catalogue, same injected string as the first thing I showed you — both demos
-> build from one module and a test asserts they match.
+> "Same agent, same catalogue, same injected string as the first thing I showed you. `[CUT D →`
+> Both demos build from one module and a test asserts they match. `← CUT D]`
 >
 > The amount and the merchant were discarded; there's nowhere to put them. What survived is a
 > quantity of fifty, which the agent *is* allowed to propose — and the server bounds it against the
@@ -96,18 +108,17 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 
 ---
 
-## 2:20 – 3:20 · Delegation — the part nobody else did
+## 2:10 – 3:05 · Delegation — the part nobody else did
 
 **Run:** `python -m agent.delegate`
 
-> "This is the piece I'm proudest of — it came from asking what happens when an agent delegates to
-> another agent.
+> "`[CUT D →` Now the part I'd most want to talk about: `← CUT D]` what happens when an agent
+> delegates to another agent.
 >
 > A human gives an agent a budget. That agent gives part of it to another. Every hop narrows.
 >
-> Here's the problem. Every capability standard I read models attenuation as set intersection: a
-> child is never wider than its parent. Correct for permissions. Wrong for money, because budgets
-> add and sets don't.
+> Every capability standard I read models attenuation as set intersection — a child is never wider
+> than its parent. Correct for permissions. Wrong for money, because budgets add and sets don't.
 >
 > The parent holds two thousand and has already promised twelve hundred to one child. A second child
 > asks for twelve hundred more. Per-edge narrowing allows it — but between them they'd hold more
@@ -115,8 +126,8 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 
 **Point at the refusal.**
 
-> "So budgets are partitioned, not compared. And the constraint refusing this sits on the parent's
-> own database row, not in my code where another query could walk around it."
+> "So budgets are partitioned, not compared, and the constraint refusing this sits on the parent's
+> own database row."
 
 **Then the revocation.**
 
@@ -127,39 +138,45 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 
 ---
 
-## 3:20 – 4:20 · What broke, and how I know any of this works
+## 3:05 – 4:05 · The architecture — this is the centre of the video
 
-**Run:** `make mutation`
+Nothing to run. Have the layer diagram from `docs/architecture.md` on screen, or the console.
 
-> "Now — what broke, because plenty did.
+> "So — the shape of it, because that's the actual contribution.
 >
-> The one that scared me: a check stopping an expired spending policy from authorising payments. I
-> deleted it on purpose to see what would happen. Three hundred and two tests passed. Two clean
-> reviews had missed it.
+> The agent proposes, and nothing else. The MCP server exposes five tools, and none of them can
+> authorize, capture, refund, or reach a provider. Under that is the authorization core — policy,
+> delegation, the state machine, the constraints. Then the provider. Then the receipt, which puts
+> three columns side by side: what the agent proposed, what the server derived, and what the
+> provider actually did.
 >
-> That's what's running now. It deletes each of my fifty-three safety guards, one at a time, and
-> requires the test protecting it to fail. A passing suite tells you the code does what you wrote.
-> It doesn't tell you the tests would notice if it stopped."
-
-**While it runs, keep going.**
-
-> "`[CUT B →` Two more. A lock I thought was protecting payment state queued callers correctly and
-> then handed the second one stale data — serialising *when* things ran, not *what they decided
-> from*. Nine tests drive real concurrent sessions at that now. `← CUT B]` And a refusal after the
-> first of two budget claims left that budget moved, for a payment that never happened."
+> The rule throughout: enforce at the lowest layer that can hold it. Database constraint over
+> transaction, transaction over application code, application code over convention. Cross-tenant
+> references are impossible because the foreign keys are composite on tenant and ID. One live
+> approval per request is a partial unique index. `[CUT D →` Published policies are immutable
+> because a trigger says so. `← CUT D]`
+>
+> `[CUT B →` I learned that one the hard way — I wrote three sibling budgets straight past my own
+> module and every check in it passed. `← CUT B]`
+>
+> And delete the agent entirely: this core is unchanged and still correct. If the agent were the
+> centre of it, the project would be arguing against itself."
 
 ---
 
-## 4:20 – 5:20 · Architecture, limits, close
+## 4:05 – 4:50 · What the tests are worth, and the limits
 
-> "Architecturally: five MCP tools, none of them can pay, and every money-critical fact is derived
-> server-side. Delete the agent entirely and the authorization core is unchanged — if the agent were
-> the centre of this, the project would be arguing against itself.
+**Run:** `make mutation`
+
+> "Which is how I know any of it holds. That's fifty-three deliberate breaks running — it deletes
+> each safety guard, one at a time, and requires the test protecting it to fail. A passing suite
+> tells you the code does what you wrote. It doesn't tell you the tests would notice if it stopped.
+> I found that out when I deleted an expired-policy check and three hundred and two tests passed.
+> That's what broke. `[CUT D →` It is the single reason the rest of this exists. `← CUT D]`
 >
-> `[CUT C →` The rule throughout: enforce at the lowest layer that can hold it. Database constraint
-> over transaction, transaction over application code, application code over convention. `← CUT C]`
-> I learned that the hard way — I wrote three sibling budgets straight past my own module and every
-> check in it passed.
+> `[CUT C →` The attack matrix in the README is generated from the scenario registry, with a test
+> asserting they match, so the documentation can't claim an attack that isn't covered by a passing
+> test. `← CUT C]`
 >
 > So every money action is gated, bounded and explainable, with an audit trail behind it.
 >
@@ -168,7 +185,11 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 > And there's no agent identity — nothing proves the agent spending is the agent the budget was
 > given to. That's the biggest gap and the first thing I'd build next."
 
-**Last line. Slow down.**
+---
+
+## 4:50 – 5:00 · Close
+
+**Slow down.**
 
 > "Nearly six hundred tests, fifty-three deliberate breaks, and `JUDGE.md` maps every claim to the
 > command that regenerates it. Thanks for watching."
@@ -177,42 +198,40 @@ Decide which of those it is *before* the first take. Do not try to fix length by
 
 ## The cuts, in order
 
-A, B and C are marked inline so you cannot lose your place mid-take. Together they take 841 words
-down to 756 — **5:02 of speech, 5:22 with pauses**. D takes it to about 4:58.
+Marked inline so you cannot lose your place mid-take. A through C take 877 words to 784 — **5:34 on
+camera**. Adding D gives 744 — **5:18**.
 
 | | What goes | Cost | Why it is the cheapest thing to lose |
 |---|---|---|---|
-| **A** | The browser-callback sentence (0:50) | 21 w | The next sentence — *a real Razorpay-delivered webhook is committed in this repo* — carries the point on its own, and harder. |
-| **B** | The stale-lock story (3:20) | 40 w | You keep the savepoint story, which is shorter and lands harder. One war story plus the mutation suite already answers the brief. |
-| **C** | The enforcement-ladder sentence (4:20) | 24 w | The delegation beat already said *on the parent's own database row, not in my code*. The punchline right after it survives without the taxonomy. |
-| **D** | Three framing sentences, if you still need 20 seconds | ~60 w | *"I'll start with the problem, in my own code…"* — just start. *"This is the piece I'm proudest of — it came from asking…"* — open on **A human gives an agent a budget**. And *"I learned that the hard way…"* in the close. All three are throat-clearing; none is evidence. |
+| **A** | Raw-byte verification and replay (0:45) | 33 w | The sentence after it — *a real Razorpay-delivered webhook is committed in this repo* — is the one a judge remembers, and A6 to A8 in the attack matrix cover this in writing. |
+| **B** | The three-sibling-budgets aside (3:05) | 23 w | A war story, and the form field is where war stories now live. The rule it illustrates survives without it. |
+| **C** | The generated attack matrix (4:05) | 30 w | The README shows this, and a judge who opens the repo meets it immediately. |
+| **D** | Four short asides, marked separately | 40 w | Pure throat-clearing: the demos-share-a-module aside, *"the part I'd most want to talk about"*, the third constraint example, and the last clause of the expired-policy story. None is evidence. |
+
+**Never cut the opening, the attack, or the architecture beat.** Those three are the pitch.
 
 **Already cut from this script:** the approval beat, which ran `agent.demo "Buy Team credits"` and
-`agent.approve`. If you record the long version and find you have room, it is the first thing to put
-back — the line for it is under *If you have room* below.
-
-**Never cut the opening or the attack.** Those two are the pitch.
+`agent.approve`; and the two remaining war stories, which now live in `form-answers.md`. If you have
+room, the approval line is under *If you have room* below.
 
 ## If you have room
 
-Only after a rehearsal take has come in under time. Each is one sentence, placed where it costs
-least.
+Only after a rehearsal take has come in under time.
 
-- **Back into 0:50:** *"Publish a new policy and the authority is revoked — it doesn't outlive the
+- **Back into 0:45:** *"Publish a new policy and the authority is revoked — it doesn't outlive the
   rules it was checked under."*
-- **Back into 1:40, on separation of duties:** *"Anything over the tenant's approval threshold stops
+- **Back into 1:35, on separation of duties:** *"Anything over the tenant's approval threshold stops
   and waits for a human under a different identity — and if the approver matches the requester, the
   server refuses."*
-- **After the mutation line (3:20):** *"And the attack matrix in the README is generated from the
-  scenario registry, with a test asserting they match — so the documentation can't claim an attack
-  that isn't covered by a passing test."*
-- **In the close (4:20):** *"The regression suite never calls a model — deterministic stand-ins, so
-  safety verification doesn't depend on how a model behaves on a given day. But `--live` runs a real
-  one against the same hostile catalogue, and measures influence by sending that catalogue twice,
-  once with the descriptions stripped."*
-- **After the webhook line (0:50):** *"The signature is verified over the raw bytes before anything
-  parses the body, and the provider's own event ID is stored, so a replay is refused by the database
-  rather than by whichever handler happens to look."*
+- **In the architecture beat (3:05):** *"The regression suite never calls a model — deterministic
+  stand-ins, so safety verification doesn't depend on how a model behaves on a given day. But
+  `--live` runs a real one against the same hostile catalogue, and measures influence by sending
+  that catalogue twice, once with the descriptions stripped."*
+- **In the architecture beat (3:05):** *"Nothing anywhere in this system can start a refund — that's
+  asserted against the live route table, not by reading tool names."*
+- **After the mutation line (4:05):** *"And a lock I thought was protecting payment state turned out
+  to be serialising when things ran, not what they decided from. Nine tests drive real concurrent
+  sessions at that now."*
 
 ## Things that will make it sound written
 

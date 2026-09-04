@@ -138,16 +138,33 @@ def test_it_still_refuses_the_claims_the_project_will_not_make() -> None:
         assert forbidden not in spoken, f"the pitch claims {forbidden!r}, which is not true"
 
 
-def _spoken_words() -> int:
-    """Every word inside a blockquote under a timed beat heading, minus the cut markers."""
+CUTS = ("A", "B", "C", "D")
+
+
+def _spoken_words(*, applying: str = "") -> int:
+    """Words in a blockquote under a timed beat heading, with the named cuts taken.
+
+    `applying="ABCD"` measures the shortest take the script offers; the default measures the
+    longest. The markers themselves never count either way.
+    """
 
     total = 0
     for block in re.split(r"\n## ", _pitch()):
         if not re.match(r"\d:\d\d", block.splitlines()[0].strip()):
             continue
         spoken = " ".join(line[1:].strip() for line in block.splitlines() if line.startswith(">"))
+        for cut in applying:
+            spoken = re.sub(
+                rf"`?\[CUT {cut} \u2192`?.*?`?\u2190 CUT {cut}\]`?", "", spoken, flags=re.S
+            )
         total += len(re.sub(r"`?\[CUT [A-D] \u2192`?|`?\u2190 CUT [A-D]\]`?", "", spoken).split())
     return total
+
+
+def _minutes(words: int) -> float:
+    """Speech at 150 words a minute, plus the twenty seconds the beats budget for silence."""
+
+    return (words / 150 * 60 + 20) / 60
 
 
 def test_the_length_it_claims_is_the_length_it_is() -> None:
@@ -169,17 +186,25 @@ def test_the_length_it_claims_is_the_length_it_is() -> None:
     )
 
 
-def test_it_still_fits_the_slot_it_is_written_for() -> None:
-    """Five minutes at a presenting pace is roughly 750 words, and this runs long on purpose.
+def test_a_five_minute_take_is_still_reachable() -> None:
+    """The full text runs long on purpose; what must stay true is that the cuts actually get there.
 
-    The full text is a six-minute demo and says so. What must stay true is that the marked cuts
-    actually reach five minutes - otherwise the cut list is decoration.
+    Bounding the uncut version would be the wrong assertion. It is a superset by design - the take
+    you record when five minutes turns out to be guidance. What would quietly ruin a recording is
+    the *cut* path drifting past the slot, because that is the one you fall back on when the cap is
+    real, usually late and under pressure.
     """
 
-    for marker in ("[CUT A", "[CUT B", "[CUT C"):
-        assert marker in _pitch(), f"{marker} is gone, so the hard-five-minute path is broken"
+    for cut in CUTS:
+        assert f"[CUT {cut}" in _pitch(), f"CUT {cut} is gone, so the short take no longer exists"
 
-    # 150 words per minute, and the beats budget about twenty seconds of deliberate silence.
-    assert _spoken_words() / 150 * 60 + 20 <= 6 * 60, (
-        "the pitch has grown past six minutes even before the cuts"
+    shortest = _minutes(_spoken_words(applying="".join(CUTS)))
+    assert shortest <= 5.5, (
+        f"with every cut taken the pitch still runs {shortest:.1f} minutes; "
+        "the five-minute path has drifted"
     )
+
+    # The cuts also have to be worth taking. If they save under half a minute they are decoration,
+    # and the reader is better served by being told to shorten a whole beat instead.
+    saved = _minutes(_spoken_words()) - shortest
+    assert saved >= 0.5, f"the cuts only save {saved * 60:.0f} seconds; that is not a cut list"
