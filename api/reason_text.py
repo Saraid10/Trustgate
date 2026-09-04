@@ -33,6 +33,7 @@ _PLAIN: dict[str, str] = {
     "APPROVAL_NOT_FOUND": "No approval has been granted for this purchase",
     "APPROVAL_NOT_REQUIRED": "The policy does not require an approval here",
     "IDEMPOTENCY_KEY_REPLAYED": "This exact request was already made once",
+    "REQUEST_BODY_TOO_LARGE": "The request was larger than this API accepts",
     # --- delegated authority ------------------------------------------------------------------
     "DELEGATION_REVOKED": "The authority behind this payment was withdrawn",
     "DELEGATION_EXPIRED": "The authority behind this payment has run out",
