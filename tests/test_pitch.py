@@ -205,9 +205,14 @@ def test_the_pace_table_is_arithmetically_true() -> None:
     )
     assert len(rows) >= 3, "the pace table is gone or no longer parses"
 
-    full, cut = _spoken_words(), _spoken_words(applying="".join(CUTS))
+    # Not named `cut`: the loop above binds that to a cut's letter, and reusing it here would make
+    # the name mean a string in one half of the function and a word count in the other.
+    full, shortest = _spoken_words(), _spoken_words(applying="".join(CUTS))
     for wpm, fm, fs, cm, cs in rows:
-        for words, minute, second, label in ((full, fm, fs, "as written"), (cut, cm, cs, "cut")):
+        for words, minute, second, label in (
+            (full, fm, fs, "as written"),
+            (shortest, cm, cs, "cut"),
+        ):
             stated = int(minute) * 60 + int(second)
             actual = words / int(wpm) * 60
             # Ten seconds of slack: the figures are rounded for a reader, not computed for a test.
@@ -217,7 +222,7 @@ def test_the_pace_table_is_arithmetically_true() -> None:
             )
 
     # The cuts still have to be worth taking. Under half a minute saved and they are decoration.
-    saved = _minutes(full) - _minutes(cut)
+    saved = _minutes(full) - _minutes(shortest)
     assert saved >= 0.5, f"the cuts only save {saved * 60:.0f} seconds; that is not a cut list"
 
 
@@ -250,3 +255,31 @@ def test_the_architecture_page_it_tells_you_to_open_exists_and_is_true() -> None
     assert "http://" not in html and "https://" not in html, (
         "the architecture page fetches something remote; it must render offline from file://"
     )
+
+
+def test_the_cut_table_costs_what_it_says_it_costs() -> None:
+    """Third time the figures in this file went stale, so they get a test rather than a proofread.
+
+    The cut list is read under pressure - a rehearsal has run long and something has to go. A row
+    claiming 33 words that actually saves 23 sends you to cut two more things you did not need to.
+    """
+
+    table = _pitch().rsplit("## The cuts, in order", maxsplit=1)[-1]
+    full = _spoken_words()
+
+    rows = re.findall(r"\| \*\*([A-D])\*\* \|[^|]*\|\s*(\d+) w\s*\|", table)
+    assert len(rows) == len(CUTS), f"the cut table lost rows: {rows}"
+    for name, claimed in rows:
+        actual = full - _spoken_words(applying=name)
+        assert int(claimed) == actual, (
+            f"cut {name} is listed at {claimed} words but removes {actual}"
+        )
+
+    # And the two running totals in the sentence above the table.
+    for pattern, applied in ((r"words to (\d+)", "ABC"), (r"Adding D gives (\d+)", "ABCD")):
+        stated = re.search(pattern, table)
+        assert stated, f"the running total for {applied} is gone"
+        actual = _spoken_words(applying=applied)
+        assert int(stated.group(1)) == actual, (
+            f"the table says {stated.group(1)} words with {applied} taken; it is {actual}"
+        )

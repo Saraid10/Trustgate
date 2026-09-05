@@ -262,15 +262,15 @@ when). By this point it has finished. Switch to that window and scroll slowly up
 
 ## The cuts, in order
 
-Marked inline so you cannot lose your place mid-take. A through C take 891 words to 798 — **5:39 on
-camera**. Adding D gives 758 — **5:23**.
+Marked inline so you cannot lose your place mid-take. At the fast reading, A through C take 1036
+words to 944 — **4:46 on camera**. Adding D gives 907 — **4:37**.
 
 | | What goes | Cost | Why it is the cheapest thing to lose |
 |---|---|---|---|
-| **A** | Raw-byte verification and replay (0:45) | 33 w | The sentence after it — *a real Razorpay-delivered webhook is committed in this repo* — is the one a judge remembers, and A6 to A8 in the attack matrix cover this in writing. |
-| **B** | The three-sibling-budgets aside (3:05) | 23 w | A war story, and the form field is where war stories now live. The rule it illustrates survives without it. |
-| **C** | The generated attack matrix (4:05) | 30 w | The README shows this, and a judge who opens the repo meets it immediately. |
-| **D** | Four short asides, marked separately | 40 w | Pure throat-clearing: the demos-share-a-module aside, *"the part I'd most want to talk about"*, the third constraint example, and the last clause of the expired-policy story. None is evidence. |
+| **A** | Raw-byte verification and replay (0:33) | 37 w | The sentence after it — *a real Razorpay-delivered webhook is committed in this repo* — is the one a judge remembers, and A6 to A8 in the attack matrix cover this in writing. |
+| **B** | The three-sibling-budgets aside (3:40) | 23 w | A war story, and the form field is where war stories now live. The rule it illustrates survives without it. |
+| **C** | The generated attack matrix (4:09) | 32 w | The README shows this, and a judge who opens the repo meets it immediately. |
+| **D** | Four short asides, marked separately | 37 w | Pure throat-clearing: the demos-share-a-module aside, *"the part I'd most want to talk about"*, the third constraint example, and the last clause of the expired-policy story. None is evidence. |
 
 **Never cut the opening, the attack, or the architecture beat.** Those three are the pitch.
 
@@ -282,18 +282,18 @@ room, the approval line is under *If you have room* below.
 
 Only after a rehearsal take has come in under time.
 
-- **Back into 0:45:** *"Publish a new policy and the authority is revoked — it doesn't outlive the
+- **Back into 0:33:** *"Publish a new policy and the authority is revoked — it doesn't outlive the
   rules it was checked under."*
-- **Back into 1:35, on separation of duties:** *"Anything over the tenant's approval threshold stops
+- **Back into 1:12, on separation of duties:** *"Anything over the tenant's approval threshold stops
   and waits for a human under a different identity — and if the approver matches the requester, the
   server refuses."*
-- **In the architecture beat (3:05):** *"The regression suite never calls a model — deterministic
+- **In the architecture beat (3:18):** *"The regression suite never calls a model — deterministic
   stand-ins, so safety verification doesn't depend on how a model behaves on a given day. But
   `--live` runs a real one against the same hostile catalogue, and measures influence by sending
   that catalogue twice, once with the descriptions stripped."*
-- **In the architecture beat (3:05):** *"Nothing anywhere in this system can start a refund — that's
+- **In the architecture beat (3:18):** *"Nothing anywhere in this system can start a refund — that's
   asserted against the live route table, not by reading tool names."*
-- **After the mutation line (4:05):** *"And a lock I thought was protecting payment state turned out
+- **After the mutation line (4:09):** *"And a lock I thought was protecting payment state turned out
   to be serialising when things ran, not what they decided from. Nine tests drive real concurrent
   sessions at that now."*
 
