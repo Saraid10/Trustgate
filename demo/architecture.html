@@ -16,24 +16,32 @@
     font: 17px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 1240px; margin: 0 auto; padding: 2.6rem 2.2rem 4rem; }
+  main { max-width: 1240px; margin: 0 auto; padding: 2.4rem 2.2rem 4rem; }
 
-  header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.4rem; }
+  header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
   h1 { font-size: 2rem; margin: 0; letter-spacing: -.025em; }
   header .tag { color: var(--dim); font-family: var(--mono); font-size: .92rem; }
 
-  .stats { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 3.2rem; }
-  .stat { flex: 1; padding: .85rem 1.1rem; border-right: 1px solid var(--line); }
+  .stats { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 2.8rem; }
+  .stat { flex: 1; padding: .8rem 1rem; border-right: 1px solid var(--line); }
   .stat:last-child { border-right: none; }
-  .stat b { display: block; font-size: 1.65rem; line-height: 1.1; letter-spacing: -.02em; }
-  .stat span { color: var(--dim); font-size: .82rem; }
+  .stat b { display: block; font-size: 1.6rem; line-height: 1.1; letter-spacing: -.02em; }
+  .stat span { color: var(--dim); font-size: .8rem; }
   .g { color: var(--ok); } .r { color: var(--no); }
 
-  section { margin-bottom: 3.4rem; }
-  h2 { font-size: 1.3rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
-  .lede { color: var(--dim); margin: 0 0 1.5rem; max-width: 76ch; font-size: 1rem; }
+  section { margin-bottom: 3rem; }
+  h2 { font-size: 1.3rem; margin: 0 0 .3rem; letter-spacing: -.01em; }
+  h2 .n { color: var(--dim); font-weight: 400; }
+  .flag {
+    display: inline-block; font-size: .68rem; letter-spacing: .1em; padding: .2rem .5rem;
+    border-radius: 3px; background: #3a2f10; color: var(--gold); vertical-align: middle;
+    margin-left: .6rem; font-weight: 700;
+  }
+  .lede { color: var(--dim); margin: .5rem 0 1.3rem; max-width: 82ch; font-size: 1rem; }
   .lede b { color: var(--ink); font-weight: 600; }
   svg { width: 100%; height: auto; display: block; }
+  .note { color: var(--dim); font-size: .9rem; margin-top: .9rem; max-width: 82ch; }
+  .note code { font-family: var(--mono); color: var(--ok); font-size: .93em; }
 </style>
 </head>
 <body>
@@ -53,115 +61,204 @@
   </div>
 
   <section>
-    <h2>1 &middot; The trust boundary</h2>
+    <h2><span class="n">1 &middot;</span> The trust boundary</h2>
     <p class="lede">
       The agent proposes <b>three fields</b>. Everything that decides what the money does is derived
       server-side. <b>There is no amount field for injected text to fill.</b>
     </p>
 
-    <svg viewBox="0 0 1200 250" role="img" aria-label="Trust boundary">
-      <rect x="4" y="40" width="260" height="176" rx="11" fill="#1a1508" stroke="#5c4413" stroke-width="1.5"/>
-      <text x="134" y="70" text-anchor="middle" fill="#e8c877" font-size="18" font-weight="700">AI buyer agent</text>
-      <text x="134" y="92" text-anchor="middle" fill="#a8935c" font-size="13">untrusted by design</text>
-      <text x="134" y="128" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">sku</text>
-      <text x="134" y="154" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">quantity</text>
-      <text x="134" y="180" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">purpose</text>
-      <text x="134" y="204" text-anchor="middle" fill="#a8935c" font-size="12.5">and nothing else</text>
+    <svg viewBox="0 0 1200 244" role="img" aria-label="Trust boundary">
+      <rect x="4" y="38" width="258" height="172" rx="11" fill="#1a1508" stroke="#5c4413" stroke-width="1.5"/>
+      <text x="133" y="68" text-anchor="middle" fill="#e8c877" font-size="18" font-weight="700">AI buyer agent</text>
+      <text x="133" y="89" text-anchor="middle" fill="#a8935c" font-size="13">untrusted by design</text>
+      <text x="133" y="124" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">sku</text>
+      <text x="133" y="150" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">quantity</text>
+      <text x="133" y="176" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">purpose</text>
+      <text x="133" y="199" text-anchor="middle" fill="#a8935c" font-size="12.5">and nothing else</text>
 
-      <line x1="330" y1="14" x2="330" y2="240" stroke="#e0847c" stroke-width="2" stroke-dasharray="7 6"/>
-      <text x="330" y="8" text-anchor="middle" fill="#e0847c" font-size="11.5" letter-spacing="1.6">TRUST BOUNDARY</text>
-      <line x1="264" y1="128" x2="384" y2="128" stroke="#6fbf95" stroke-width="2.5"/>
-      <polygon points="384,128 372,122 372,134" fill="#6fbf95"/>
-      <rect x="252" y="96" width="156" height="18" fill="#0a0f10"/>
-      <text x="330" y="110" text-anchor="middle" fill="#6fbf95" font-size="11.5">the only arrow it crosses</text>
+      <line x1="328" y1="12" x2="328" y2="234" stroke="#e0847c" stroke-width="2" stroke-dasharray="7 6"/>
+      <text x="328" y="8" text-anchor="middle" fill="#e0847c" font-size="11.5" letter-spacing="1.6">TRUST BOUNDARY</text>
+      <line x1="262" y1="124" x2="382" y2="124" stroke="#6fbf95" stroke-width="2.5"/>
+      <polygon points="382,124 370,118 370,130" fill="#6fbf95"/>
+      <rect x="250" y="92" width="156" height="18" fill="#0a0f10"/>
+      <text x="328" y="106" text-anchor="middle" fill="#6fbf95" font-size="11.5">the only arrow it crosses</text>
 
-      <rect x="396" y="40" width="368" height="176" rx="11" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
-      <text x="580" y="70" text-anchor="middle" fill="#8fd9b2" font-size="18" font-weight="700">TrustGate</text>
-      <text x="580" y="92" text-anchor="middle" fill="#6a9d84" font-size="13">derives, then decides</text>
-      <text x="580" y="128" text-anchor="middle" fill="#dcefe4" font-size="15">merchant &middot; amount &middot; currency</text>
-      <text x="580" y="149" text-anchor="middle" fill="#6a9d84" font-size="12.5">from the catalogue, never the agent</text>
-      <text x="580" y="180" text-anchor="middle" fill="#dcefe4" font-size="15">policy &middot; delegation &middot; approval</text>
-      <text x="580" y="201" text-anchor="middle" fill="#6a9d84" font-size="12.5">evaluated server-side</text>
+      <rect x="394" y="38" width="368" height="172" rx="11" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
+      <text x="578" y="68" text-anchor="middle" fill="#8fd9b2" font-size="18" font-weight="700">TrustGate</text>
+      <text x="578" y="89" text-anchor="middle" fill="#6a9d84" font-size="13">derives, then decides</text>
+      <text x="578" y="124" text-anchor="middle" fill="#dcefe4" font-size="15">merchant &middot; amount &middot; currency</text>
+      <text x="578" y="145" text-anchor="middle" fill="#6a9d84" font-size="12.5">from the catalogue, never the agent</text>
+      <text x="578" y="176" text-anchor="middle" fill="#dcefe4" font-size="15">policy &middot; delegation &middot; approval</text>
+      <text x="578" y="197" text-anchor="middle" fill="#6a9d84" font-size="12.5">evaluated server-side</text>
 
-      <line x1="764" y1="128" x2="860" y2="128" stroke="#4c6b6b" stroke-width="2"/>
-      <polygon points="860,128 848,122 848,134" fill="#4c6b6b"/>
-      <rect x="770" y="96" width="86" height="18" fill="#0a0f10"/>
-      <text x="812" y="110" text-anchor="middle" fill="#8fa6a6" font-size="11.5">a human pays</text>
+      <line x1="762" y1="124" x2="856" y2="124" stroke="#4c6b6b" stroke-width="2"/>
+      <polygon points="856,124 844,118 844,130" fill="#4c6b6b"/>
+      <rect x="768" y="92" width="84" height="18" fill="#0a0f10"/>
+      <text x="810" y="106" text-anchor="middle" fill="#8fa6a6" font-size="11.5">a human pays</text>
 
-      <rect x="872" y="40" width="324" height="176" rx="11" fill="#101a1c" stroke="#223436" stroke-width="1.5"/>
-      <text x="1034" y="70" text-anchor="middle" fill="#eaf3f3" font-size="18" font-weight="700">Razorpay Test Mode</text>
-      <text x="1034" y="92" text-anchor="middle" fill="#8fa6a6" font-size="13">executes a bounded order</text>
-      <text x="1034" y="132" text-anchor="middle" fill="#6fbf95" font-size="15" font-family="ui-monospace, monospace">payment.captured</text>
-      <text x="1034" y="154" text-anchor="middle" fill="#8fa6a6" font-size="12.5">signed &mdash; the only thing that moves money</text>
-      <text x="1034" y="186" text-anchor="middle" fill="#8fa6a6" font-size="12.5">the browser callback is verified,</text>
-      <text x="1034" y="204" text-anchor="middle" fill="#8fa6a6" font-size="12.5">then deliberately ignored</text>
+      <rect x="868" y="38" width="328" height="172" rx="11" fill="#101a1c" stroke="#223436" stroke-width="1.5"/>
+      <text x="1032" y="68" text-anchor="middle" fill="#eaf3f3" font-size="18" font-weight="700">Razorpay Test Mode</text>
+      <text x="1032" y="89" text-anchor="middle" fill="#8fa6a6" font-size="13">executes a bounded order</text>
+      <text x="1032" y="128" text-anchor="middle" fill="#6fbf95" font-size="15" font-family="ui-monospace, monospace">payment.captured</text>
+      <text x="1032" y="149" text-anchor="middle" fill="#8fa6a6" font-size="12.5">signed &mdash; the only thing that moves money</text>
+      <text x="1032" y="180" text-anchor="middle" fill="#8fa6a6" font-size="12.5">the browser callback is verified,</text>
+      <text x="1032" y="198" text-anchor="middle" fill="#8fa6a6" font-size="12.5">then deliberately ignored</text>
     </svg>
   </section>
 
   <section>
-    <h2>2 &middot; The layers</h2>
+    <h2><span class="n">2 &middot;</span> Authorized is not the same as able to pay<span class="flag">THE GAP</span></h2>
     <p class="lede">
-      <b>Delete the agent entirely and everything below the second line is unchanged, and still
+      Most systems collapse these into one state. Here they are two, and the distance between them
+      is a separate authority that must be issued, is <b>single-use</b>, expires in <b>15 minutes</b>,
+      and is <b>bound to a hash of that exact purchase</b>.
+    </p>
+
+    <svg viewBox="0 0 1200 190" role="img" aria-label="Authorization and payment are separate steps">
+      <rect x="0" y="44" width="216" height="70" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
+      <text x="108" y="72" text-anchor="middle" fill="#8fd9b2" font-size="16" font-weight="700" font-family="ui-monospace, monospace">AUTHORIZED</text>
+      <text x="108" y="94" text-anchor="middle" fill="#6a9d84" font-size="12.5">policy said yes</text>
+      <text x="108" y="140" text-anchor="middle" fill="#e0847c" font-size="13" font-weight="600">Order creation allowed: No</text>
+      <text x="108" y="160" text-anchor="middle" fill="#8fa6a6" font-size="12">it can sit here indefinitely</text>
+
+      <line x1="216" y1="79" x2="330" y2="79" stroke="#4c6b6b" stroke-width="2"/>
+      <rect x="330" y="34" width="256" height="90" rx="9" fill="#241d0b" stroke="#8c5a0c" stroke-width="2"/>
+      <text x="458" y="60" text-anchor="middle" fill="#e8c877" font-size="14" font-weight="700">CHECKOUT AUTHORITY</text>
+      <text x="458" y="81" text-anchor="middle" fill="#c9a961" font-size="12.5">single-use &middot; 15 minutes</text>
+      <text x="458" y="100" text-anchor="middle" fill="#c9a961" font-size="12.5">bound to a hash of this purchase</text>
+      <text x="458" y="117" text-anchor="middle" fill="#a8935c" font-size="11.5">revoked if the policy under it moves</text>
+
+      <line x1="586" y1="79" x2="700" y2="79" stroke="#4c6b6b" stroke-width="2"/>
+      <polygon points="700,79 688,73 688,85" fill="#4c6b6b"/>
+      <rect x="700" y="44" width="216" height="70" rx="9" fill="#101a1c" stroke="#223436" stroke-width="1.5"/>
+      <text x="808" y="72" text-anchor="middle" fill="#eaf3f3" font-size="15" font-weight="700" font-family="ui-monospace, monospace">PROVIDER_PENDING</text>
+      <text x="808" y="94" text-anchor="middle" fill="#8fa6a6" font-size="12.5">one order, bounded</text>
+
+      <line x1="916" y1="79" x2="1000" y2="79" stroke="#6fbf95" stroke-width="2"/>
+      <polygon points="1000,79 988,73 988,85" fill="#6fbf95"/>
+      <rect x="1000" y="44" width="200" height="70" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
+      <text x="1100" y="72" text-anchor="middle" fill="#8fd9b2" font-size="16" font-weight="700" font-family="ui-monospace, monospace">CAPTURED</text>
+      <text x="1100" y="94" text-anchor="middle" fill="#6a9d84" font-size="12.5">only a signed event gets here</text>
+
+      <text x="0" y="18" fill="#8fa6a6" font-size="12.5">the agent reaches this box &mdash;&mdash;&gt;</text>
+      <text x="330" y="18" fill="#e8c877" font-size="12.5">&mdash; and never any of these &mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&gt;</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2><span class="n">3 &middot;</span> Delegated authority between agents<span class="flag">THE DIFFERENTIATOR</span></h2>
+    <p class="lede">
+      Every capability standard models attenuation as <b>set intersection</b>: a child is never wider
+      than its parent. That is correct for permissions and <b>wrong for money, because budgets add
+      and sets do not</b>. Two children each no wider than their parent can, between them, hold twice
+      what the parent ever had.
+    </p>
+
+    <svg viewBox="0 0 1200 300" role="img" aria-label="Sibling budget amplification, refused">
+      <rect x="450" y="0" width="300" height="52" rx="9" fill="#101a1c" stroke="#223436"/>
+      <text x="600" y="23" text-anchor="middle" fill="#eaf3f3" font-size="14" font-weight="700">Finance lead (human)</text>
+      <text x="600" y="42" text-anchor="middle" fill="#8fa6a6" font-size="12.5">grants &#8377;2,000</text>
+      <line x1="600" y1="52" x2="600" y2="78" stroke="#3d5354" stroke-width="2"/>
+
+      <rect x="450" y="78" width="300" height="64" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2"/>
+      <text x="600" y="103" text-anchor="middle" fill="#8fd9b2" font-size="15" font-weight="700" font-family="ui-monospace, monospace">buyer-agent</text>
+      <text x="600" y="126" text-anchor="middle" fill="#a8ccbb" font-size="13">holds &#8377;2,000 &middot; already promised &#8377;1,200</text>
+
+      <line x1="520" y1="142" x2="330" y2="186" stroke="#2c6349" stroke-width="2"/>
+      <text x="360" y="168" fill="#6fbf95" font-size="12.5">asks &#8377;1,200</text>
+      <line x1="680" y1="142" x2="870" y2="186" stroke="#973029" stroke-width="2" stroke-dasharray="6 4"/>
+      <text x="775" y="168" fill="#e0847c" font-size="12.5">asks &#8377;1,200</text>
+
+      <rect x="130" y="186" width="330" height="76" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
+      <text x="295" y="212" text-anchor="middle" fill="#8fd9b2" font-size="14" font-weight="700" font-family="ui-monospace, monospace">procurement-agent</text>
+      <text x="295" y="234" text-anchor="middle" fill="#a8ccbb" font-size="13">allocated &#8377;1,200</text>
+      <text x="295" y="253" text-anchor="middle" fill="#6a9d84" font-size="12">no wider than its parent &mdash; allowed</text>
+
+      <rect x="740" y="186" width="330" height="76" rx="9" fill="#2a1210" stroke="#973029" stroke-width="2"/>
+      <text x="905" y="212" text-anchor="middle" fill="#e0847c" font-size="14" font-weight="700" font-family="ui-monospace, monospace">renewals-agent</text>
+      <text x="905" y="234" text-anchor="middle" fill="#e0847c" font-size="13" font-weight="700" font-family="ui-monospace, monospace">DELEGATION_BUDGET_EXHAUSTED</text>
+      <text x="905" y="253" text-anchor="middle" fill="#b5766f" font-size="12">also no wider than its parent &mdash; refused anyway</text>
+
+      <rect x="130" y="276" width="940" height="24" rx="5" fill="#3a2f10"/>
+      <text x="600" y="292" text-anchor="middle" fill="#e8c877" font-size="13">
+        Every per-edge check passes. Together they would hold &#8377;2,400 of a &#8377;2,000 budget.
+      </text>
+    </svg>
+
+    <p class="note">
+      The refusal comes from <code>ck_delegation_budget_partitioned</code>, a check constraint
+      <b>on the parent's own row</b> — the budget is <b>partitioned</b>, not compared. And revoking
+      one hop ends every branch below it <b>without touching a descendant</b>: the leaf's own
+      <code>revoked_at</code> is still <code>None</code>, and its next spend is refused anyway,
+      because authority is re-derived from the whole chain on every spend and again at checkout.
+      A signed token would have to be hunted down and recalled.
+    </p>
+  </section>
+
+  <section>
+    <h2><span class="n">4 &middot;</span> The layers</h2>
+    <p class="lede">
+      <b>Delete the agent entirely and everything below the dotted line is unchanged, and still
       correct.</b> If the agent were the centre of this, the project would be arguing against itself.
     </p>
 
-    <svg viewBox="0 0 1200 330" role="img" aria-label="Layer stack">
-      <rect x="0" y="0" width="1200" height="54" rx="9" fill="#1a1508" stroke="#5c4413" stroke-width="1.5"/>
-      <text x="24" y="25" fill="#e8c877" font-size="15" font-weight="700" font-family="ui-monospace, monospace">agent/</text>
-      <text x="24" y="44" fill="#a8935c" font-size="13">thin, untrusted, replaceable &mdash; proposes sku, quantity, purpose</text>
+    <svg viewBox="0 0 1200 300" role="img" aria-label="Layer stack">
+      <rect x="0" y="0" width="1200" height="50" rx="9" fill="#1a1508" stroke="#5c4413" stroke-width="1.5"/>
+      <text x="24" y="23" fill="#e8c877" font-size="15" font-weight="700" font-family="ui-monospace, monospace">agent/</text>
+      <text x="24" y="42" fill="#a8935c" font-size="13">thin, untrusted, replaceable</text>
 
-      <rect x="0" y="66" width="1200" height="62" rx="9" fill="#131f21" stroke="#2f4547" stroke-width="1.5"/>
-      <text x="24" y="90" fill="#cfe3e3" font-size="15" font-weight="700" font-family="ui-monospace, monospace">mcp_server/</text>
-      <text x="150" y="90" fill="#8fa6a6" font-size="13.5">five tools, none can authorize, capture, refund, or reach a provider</text>
-      <text x="24" y="114" fill="#6d8b8b" font-size="12" font-family="ui-monospace, monospace">list_catalog &middot; create_payment_request_tool &middot; evaluate_payment_policy &middot; request_user_approval &middot; get_payment_status</text>
+      <rect x="0" y="60" width="1200" height="58" rx="9" fill="#131f21" stroke="#2f4547" stroke-width="1.5"/>
+      <text x="24" y="83" fill="#cfe3e3" font-size="15" font-weight="700" font-family="ui-monospace, monospace">mcp_server/</text>
+      <text x="150" y="83" fill="#8fa6a6" font-size="13.5">five tools, none can authorize, capture, refund, or reach a provider</text>
+      <text x="24" y="105" fill="#6d8b8b" font-size="12" font-family="ui-monospace, monospace">list_catalog &middot; create_payment_request_tool &middot; evaluate_payment_policy &middot; request_user_approval &middot; get_payment_status</text>
 
-      <line x1="0" y1="140" x2="1200" y2="140" stroke="#6fbf95" stroke-width="1" stroke-dasharray="4 5" opacity=".65"/>
-      <rect x="466" y="131" width="268" height="18" fill="#0a0f10"/>
-      <text x="600" y="145" text-anchor="middle" fill="#6fbf95" font-size="11.5">everything below here survives deleting the agent</text>
+      <line x1="0" y1="130" x2="1200" y2="130" stroke="#6fbf95" stroke-width="1.2" stroke-dasharray="5 5" opacity=".7"/>
+      <rect x="450" y="121" width="300" height="18" fill="#0a0f10"/>
+      <text x="600" y="135" text-anchor="middle" fill="#6fbf95" font-size="11.5">everything below here survives deleting the agent</text>
 
-      <rect x="0" y="158" width="1200" height="130" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2"/>
-      <text x="24" y="184" fill="#8fd9b2" font-size="15" font-weight="700" letter-spacing=".05em">THE AUTHORIZATION CORE &mdash; this is the product</text>
-      <text x="24" y="214" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">policy_engine/</text>
-      <text x="230" y="214" fill="#8fa6a6" font-size="13.5">rule evaluation, atomic daily budget</text>
-      <text x="640" y="214" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">state_machine/</text>
-      <text x="830" y="214" fill="#8fa6a6" font-size="13.5">row-locked transitions</text>
-      <text x="24" y="243" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">delegation/</text>
-      <text x="230" y="243" fill="#8fa6a6" font-size="13.5">narrows per edge, partitions across siblings</text>
-      <text x="640" y="243" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">models/</text>
-      <text x="830" y="243" fill="#8fa6a6" font-size="13.5">invariants as database constraints</text>
-      <text x="24" y="272" fill="#6a9d84" font-size="12.5">Razorpay Test Mode below it; the evidence receipt above it, showing proposed / derived / provider outcome</text>
+      <rect x="0" y="148" width="1200" height="118" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2"/>
+      <text x="24" y="173" fill="#8fd9b2" font-size="15" font-weight="700" letter-spacing=".05em">THE AUTHORIZATION CORE &mdash; this is the product</text>
+      <text x="24" y="202" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">policy_engine/</text>
+      <text x="230" y="202" fill="#8fa6a6" font-size="13.5">rule evaluation, atomic daily budget</text>
+      <text x="640" y="202" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">state_machine/</text>
+      <text x="830" y="202" fill="#8fa6a6" font-size="13.5">row-locked transitions</text>
+      <text x="24" y="230" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">delegation/</text>
+      <text x="230" y="230" fill="#8fa6a6" font-size="13.5">narrows per edge, partitions across siblings</text>
+      <text x="640" y="230" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">models/</text>
+      <text x="830" y="230" fill="#8fa6a6" font-size="13.5">invariants as database constraints</text>
+      <text x="24" y="256" fill="#6a9d84" font-size="12.5">evidence receipt above it: proposed / derived / provider outcome, per purchase</text>
 
-      <rect x="0" y="298" width="1200" height="32" rx="9" fill="#101a1c" stroke="#223436"/>
-      <text x="24" y="319" fill="#8fa6a6" font-size="13">Provider execution &mdash; a bounded order, then a signed event back</text>
+      <rect x="0" y="276" width="1200" height="24" rx="7" fill="#101a1c" stroke="#223436"/>
+      <text x="24" y="293" fill="#8fa6a6" font-size="12.5">Provider execution &mdash; a bounded order, then a signed event back</text>
     </svg>
   </section>
 
   <section>
-    <h2>3 &middot; Where each rule is enforced</h2>
+    <h2><span class="n">5 &middot;</span> Where each rule is enforced</h2>
     <p class="lede">
       One principle: <b>enforce at the lowest layer that can hold it.</b> A rule in application code
       is a rule a different query walks around &mdash; so most of them are not in code at all.
     </p>
 
-    <svg viewBox="0 0 1200 340" role="img" aria-label="Enforcement ladder: 2 application, 4 transaction, 6 database">
-      <rect x="330" y="6" width="540" height="92" rx="9" fill="#241d0b" stroke="#5c4413" stroke-width="1.5"/>
-      <text x="360" y="42" fill="#e8c877" font-size="34" font-weight="700" font-family="ui-monospace, monospace">2</text>
-      <text x="404" y="36" fill="#e8c877" font-size="15" font-weight="700" letter-spacing=".08em">APPLICATION CODE</text>
-      <text x="404" y="58" fill="#a8935c" font-size="13">schema forbids unknown fields &middot; HMAC over raw bytes before parsing</text>
-      <text x="360" y="86" fill="#8a7440" font-size="12.5">weakest: a different code path can miss it</text>
+    <svg viewBox="0 0 1200 336" role="img" aria-label="Enforcement ladder: 2 application, 4 transaction, 6 database">
+      <rect x="330" y="4" width="540" height="90" rx="9" fill="#241d0b" stroke="#5c4413" stroke-width="1.5"/>
+      <text x="360" y="40" fill="#e8c877" font-size="34" font-weight="700" font-family="ui-monospace, monospace">2</text>
+      <text x="404" y="34" fill="#e8c877" font-size="15" font-weight="700" letter-spacing=".08em">APPLICATION CODE</text>
+      <text x="404" y="56" fill="#a8935c" font-size="13">schema forbids unknown fields &middot; HMAC over raw bytes before parsing</text>
+      <text x="360" y="82" fill="#8a7440" font-size="12.5">weakest: a different code path can miss it</text>
 
-      <rect x="210" y="110" width="780" height="92" rx="9" fill="#141f2b" stroke="#2f4a63" stroke-width="1.5"/>
-      <text x="240" y="146" fill="#93bfe0" font-size="34" font-weight="700" font-family="ui-monospace, monospace">4</text>
-      <text x="284" y="140" fill="#93bfe0" font-size="15" font-weight="700" letter-spacing=".08em">TRANSACTION</text>
-      <text x="284" y="162" fill="#7d9ab5" font-size="13">daily limit by conditional upsert &middot; approval consumed once &middot; FOR UPDATE on the authority and the tenant row</text>
-      <text x="240" y="190" fill="#64809a" font-size="12.5">holds under concurrency, inside one transaction</text>
+      <rect x="210" y="106" width="780" height="90" rx="9" fill="#141f2b" stroke="#2f4a63" stroke-width="1.5"/>
+      <text x="240" y="142" fill="#93bfe0" font-size="34" font-weight="700" font-family="ui-monospace, monospace">4</text>
+      <text x="284" y="136" fill="#93bfe0" font-size="15" font-weight="700" letter-spacing=".08em">TRANSACTION</text>
+      <text x="284" y="158" fill="#7d9ab5" font-size="13">daily limit by conditional upsert &middot; approval consumed once &middot; FOR UPDATE on the authority and the tenant row</text>
+      <text x="240" y="184" fill="#64809a" font-size="12.5">holds under concurrency, inside one transaction</text>
 
-      <rect x="60" y="214" width="1080" height="112" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2.5"/>
-      <text x="92" y="254" fill="#8fd9b2" font-size="38" font-weight="700" font-family="ui-monospace, monospace">6</text>
-      <text x="144" y="248" fill="#8fd9b2" font-size="16" font-weight="700" letter-spacing=".08em">DATABASE CONSTRAINT</text>
-      <text x="144" y="272" fill="#a8ccbb" font-size="13">composite foreign keys on (tenant_id, id) &middot; partial unique index on live approvals &middot; immutability trigger</text>
-      <text x="144" y="292" fill="#a8ccbb" font-size="13">CHECK on payment state &middot; CHECK that siblings cannot outspend their parent &middot; one provider order per authority</text>
-      <text x="92" y="316" fill="#6a9d84" font-size="12.5">strongest: no query can get around it, including mine</text>
+      <rect x="60" y="208" width="1080" height="116" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2.5"/>
+      <text x="92" y="250" fill="#8fd9b2" font-size="38" font-weight="700" font-family="ui-monospace, monospace">6</text>
+      <text x="144" y="244" fill="#8fd9b2" font-size="16" font-weight="700" letter-spacing=".08em">DATABASE CONSTRAINT</text>
+      <text x="144" y="268" fill="#a8ccbb" font-size="13">composite foreign keys on (tenant_id, id) &middot; partial unique index on live approvals &middot; immutability trigger</text>
+      <text x="144" y="288" fill="#a8ccbb" font-size="13">CHECK on payment state &middot; CHECK that siblings cannot outspend their parent &middot; one provider order per authority</text>
+      <text x="92" y="314" fill="#6a9d84" font-size="12.5">strongest: no query can get around it, including mine</text>
     </svg>
   </section>
 

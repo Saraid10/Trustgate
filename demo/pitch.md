@@ -31,7 +31,7 @@ that reads as text.
 
 ## Length — read this before you record
 
-The spoken text below is **953 words**, and 824 with every cut taken. Both numbers are measured,
+The spoken text below is **1036 words**, and 907 with every cut taken. Both numbers are measured,
 and a test fails if they drift.
 
 What that becomes on camera depends entirely on how fast you speak, so time a rehearsal take before
@@ -39,9 +39,9 @@ you decide anything. Add roughly 25 seconds to every figure for the pauses and t
 
 | Your pace | As written | With all four cuts |
 |---|---|---|
-| 150 wpm — deliberate | 6:21 | 5:30 |
-| 190 wpm — brisk | 5:01 | 4:20 |
-| **230 wpm — fast** | **4:09** | 3:35 |
+| 150 wpm — deliberate | 6:54 | 6:03 |
+| 190 wpm — brisk | 5:27 | 4:46 |
+| **230 wpm — fast** | **4:30** | 3:57 |
 
 If a rehearsal puts you near the bottom row, **record it as written and take no cuts at all** — the
 architecture beat is what the checklist actually asks for, and it is the last thing to shorten. The
@@ -118,24 +118,29 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 
 ## 2:10 – 3:05 · Delegation — the part nobody else did
 
-**Run:** `python -m agent.delegate`
+**Run:** `python -m agent.delegate` — let the chain print, then **switch to the architecture tab,
+section 3.** Terminal text is hard to read on video; the diagram is not. Run it for real, explain it
+from the picture.
 
 > "`[CUT D →` Now the part I'd most want to talk about: `← CUT D]` what happens when an agent
 > delegates to another agent.
 >
-> A human gives an agent a budget. That agent gives part of it to another. Every hop narrows.
->
-> Every capability standard I read models attenuation as set intersection — a child is never wider
+> A human gives an agent a budget. That agent gives part of it to another. Every hop narrows."
+
+**Switch to the architecture tab, section 3.**
+
+> "Every capability standard I read models attenuation as set intersection — a child is never wider
 > than its parent. Correct for permissions. Wrong for money, because budgets add and sets don't.
 >
 > The parent holds two thousand and has already promised twelve hundred to one child. A second child
-> asks for twelve hundred more. Per-edge narrowing allows it — but between them they'd hold more
-> than the parent ever had."
+> asks for twelve hundred more. Look at the two boxes: both children are no wider than their parent,
+> so every per-edge check passes — and between them they'd hold two thousand four hundred of a two
+> thousand budget."
 
-**Point at the refusal.**
+**Point at the red box.**
 
-> "So budgets are partitioned, not compared, and the constraint refusing this sits on the parent's
-> own database row."
+> "So budgets are partitioned, not compared. And the constraint refusing this is a check on the
+> parent's own database row — not in my code, where a different query could walk around it."
 
 **Then the revocation.**
 
@@ -154,27 +159,36 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 demo/architecture.html
 ```
 
-A stat strip and three diagrams, built for this beat. **Scroll from one to the next as you talk** —
-never narrate a screen that is not moving. Have it already open on a second tab; do not open it on
-camera.
+Five sections. You already used **section 3** in the delegation beat — now scroll back to the top and
+walk **1 → 2 → 4 → 5.** Never narrate a screen that is not moving. Have the tab already open; do not
+open it on camera.
 
-Land on the strip for two seconds before you say anything. It reads
+Land on the stat strip for two seconds before you say anything. It reads
 **3 fields · 5 tools · 0 can move money · 53 guards · 16 attacks**, and it does a lot of the
 arguing for you.
 
-### 3:05 · Diagram 1 — the trust boundary
+### 3:05 · Section 1 — the trust boundary
 
 > "So — the shape of it, because this is the actual contribution.
 >
 > The trust boundary. The agent proposes three fields: SKU, quantity, purpose. That is the only
-> arrow it ever crosses. Merchant, amount and currency are looked up server-side from the
-> catalogue — there is no amount field for injected text to fill.
+> arrow it ever crosses. Merchant, amount and currency are looked up server-side — there is no
+> amount field for injected text to fill."
+
+**Scroll to section 2.**
+
+### 3:22 · Section 2 — the gap
+
+> "And this is the distinction I'd most want to land. Authorized and able to pay are two different
+> states here, and most systems collapse them into one. Between them sits a separate authority:
+> single-use, fifteen minutes, bound to a hash of that exact purchase, and revoked if the policy
+> underneath it moves.
 >
-> And on the right, only a signed provider event moves money."
+> The agent reaches the first box. It never reaches any of the others."
 
-**Scroll to diagram 2.**
+**Scroll past section 3 — you already did it — to section 4.**
 
-### 3:30 · Diagram 2 — the layers
+### 3:45 · Section 4 — the layers
 
 > "The layers. Agent on top, untrusted and replaceable. Then five MCP tools, and not one of them can
 > authorize, capture, refund, or reach a provider. Below that, the authorization core.
@@ -185,7 +199,7 @@ arguing for you.
 
 **Scroll to the ladder.**
 
-### 3:55 · Diagram 3 — where each rule is enforced
+### 4:00 · Section 5 — where each rule is enforced
 
 **Point at the widest bar as you say the number.**
 

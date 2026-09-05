@@ -175,7 +175,7 @@ def test_the_length_it_claims_is_the_length_it_is() -> None:
     and by then the tunnel is up and the database is seeded.
     """
 
-    claimed = re.search(r"is \*\*(\d{3}) words\*\*", _pitch())
+    claimed = re.search(r"is \*\*(\d{3,4}) words\*\*", _pitch())
 
     assert claimed, "the pitch no longer states its own spoken word count"
     actual = _spoken_words()
