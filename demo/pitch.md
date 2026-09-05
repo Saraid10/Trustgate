@@ -31,7 +31,7 @@ that reads as text.
 
 ## Length — read this before you record
 
-The spoken text below is **978 words**, and 844 with every cut taken. Both numbers are measured,
+The spoken text below is **953 words**, and 824 with every cut taken. Both numbers are measured,
 and a test fails if they drift.
 
 What that becomes on camera depends entirely on how fast you speak, so time a rehearsal take before
@@ -39,9 +39,9 @@ you decide anything. Add roughly 25 seconds to every figure for the pauses and t
 
 | Your pace | As written | With all four cuts |
 |---|---|---|
-| 150 wpm — deliberate | 6:31 | 5:38 |
-| 190 wpm — brisk | 5:09 | 4:27 |
-| **230 wpm — fast** | **4:15** | 3:40 |
+| 150 wpm — deliberate | 6:21 | 5:30 |
+| 190 wpm — brisk | 5:01 | 4:20 |
+| **230 wpm — fast** | **4:09** | 3:35 |
 
 If a rehearsal puts you near the bottom row, **record it as written and take no cuts at all** — the
 architecture beat is what the checklist actually asks for, and it is the last thing to shorten. The
@@ -154,50 +154,52 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 demo/architecture.html
 ```
 
-Three diagrams on one page, built for this beat. Scroll from one to the next as you talk — never
-talk over a screen that is not moving. Have it already open on a second tab; do not open it on
+A stat strip and three diagrams, built for this beat. **Scroll from one to the next as you talk** —
+never narrate a screen that is not moving. Have it already open on a second tab; do not open it on
 camera.
+
+Land on the strip for two seconds before you say anything. It reads
+**3 fields · 5 tools · 0 can move money · 53 guards · 16 attacks**, and it does a lot of the
+arguing for you.
 
 ### 3:05 · Diagram 1 — the trust boundary
 
-> "So — the shape of it, because that's the actual contribution. Three pictures.
+> "So — the shape of it, because this is the actual contribution.
 >
-> This is the trust boundary. The agent proposes three fields: SKU, quantity, purpose. That is the
-> only arrow it ever crosses. Everything that decides what the money does — merchant, amount,
-> currency — is looked up server-side from the catalogue. There is no amount field for injected
-> text to fill.
+> The trust boundary. The agent proposes three fields: SKU, quantity, purpose. That is the only
+> arrow it ever crosses. Merchant, amount and currency are looked up server-side from the
+> catalogue — there is no amount field for injected text to fill.
 >
-> And on the right: only a signed provider event moves money."
+> And on the right, only a signed provider event moves money."
 
 **Scroll to diagram 2.**
 
 ### 3:30 · Diagram 2 — the layers
 
-> "These are the layers. The agent on top, untrusted and replaceable. Then five MCP tools, and none
-> of them can authorize, capture, refund, or reach a provider. Under that is the authorization
-> core — policy, delegation, the state machine, the constraints.
+> "The layers. Agent on top, untrusted and replaceable. Then five MCP tools, and not one of them can
+> authorize, capture, refund, or reach a provider. Below that, the authorization core.
 >
-> And here is the claim I would stake the project on. Delete the agent entirely, and everything
-> below that second line is unchanged and still correct. If the agent were the centre of this, the
+> And this is the claim I'd stake the project on — that dotted line. Delete the agent entirely, and
+> everything below it is unchanged and still correct. If the agent were the centre of this, the
 > project would be arguing against itself."
 
-**Scroll to the table.**
+**Scroll to the ladder.**
 
 ### 3:55 · Diagram 3 — where each rule is enforced
 
-> "And this is where each rule actually lives. One principle: enforce at the lowest layer that can
-> hold it. Database constraint over transaction, transaction over application code, application
-> code over convention.
+**Point at the widest bar as you say the number.**
+
+> "And this is where the rules actually live. One principle: enforce at the lowest layer that can
+> hold it.
 >
-> Cross-tenant references are impossible because the foreign keys are composite. One live approval
-> per request is a partial unique index. Siblings cannot outspend their parent because of a check
-> constraint on the parent's own row. `[CUT D →` Published policies are immutable because a trigger
-> says so. `← CUT D]`
+> Two are in application code — that's the weakest place, because a different code path can miss
+> it. Four hold inside a transaction. And six are database constraints: composite foreign keys,
+> a partial unique index on live approvals, a check that siblings cannot outspend their parent.
+> `[CUT D →` An immutability trigger on published policies. `← CUT D]`
 >
-> Six of those are database facts, not code I have to remember to call.
->
-> `[CUT B →` I learned that one the hard way — I wrote three sibling budgets straight past my own
-> validation module and every check in it passed. `← CUT B]`"
+> That bottom row is the point. No query can get around those. Including mine —
+> `[CUT B →` and that's not hypothetical: I once wrote three over-committed sibling budgets straight
+> past my own validation module, and every check in it passed. `← CUT B]`"
 
 ---
 

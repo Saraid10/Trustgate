@@ -6,175 +6,163 @@
 <title>TrustGate — architecture</title>
 <style>
   :root {
-    --bg: #0a0f10; --panel: #101a1c; --line: #223436; --ink: #e6efef; --dim: #8fa6a6;
-    --ok: #6fbf95; --no: #e0847c; --warn: #d9a441; --agent: #c9922e;
+    --bg: #0a0f10; --ink: #eaf3f3; --dim: #8fa6a6; --line: #223436;
+    --ok: #6fbf95; --no: #e0847c; --gold: #e8c877;
     --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--ink);
-    font: 16px/1.55 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    font: 17px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  main { max-width: 1180px; margin: 0 auto; padding: 3rem 2rem 5rem; }
-  h1 { font-size: 2.1rem; margin: 0 0 .3rem; letter-spacing: -.02em; }
-  .sub { color: var(--dim); font-family: var(--mono); font-size: .95rem; margin-bottom: 3rem; }
-  section { margin: 0 0 4.5rem; }
-  h2 {
-    font-size: 1.45rem; margin: 0 0 .4rem; letter-spacing: -.01em;
-    padding-bottom: .5rem; border-bottom: 1px solid var(--line);
-  }
-  .lede { color: var(--dim); margin: .7rem 0 2rem; max-width: 70ch; font-size: 1.02rem; }
-  .lede strong { color: var(--ink); font-weight: 600; }
-  svg { width: 100%; height: auto; display: block; }
-  .cap { color: var(--dim); font-size: .92rem; margin-top: 1rem; max-width: 74ch; }
+  main { max-width: 1240px; margin: 0 auto; padding: 2.6rem 2.2rem 4rem; }
 
-  table { width: 100%; border-collapse: collapse; margin-top: .5rem; font-size: .96rem; }
-  th {
-    text-align: left; padding: .6rem .8rem; color: var(--dim); font-weight: 600;
-    border-bottom: 1px solid var(--line); font-size: .84rem; letter-spacing: .06em;
-    text-transform: uppercase;
-  }
-  td { padding: .62rem .8rem; border-bottom: 1px solid #16292b; vertical-align: top; }
-  tr:last-child td { border-bottom: none; }
-  code { font-family: var(--mono); font-size: .92em; color: var(--ok); }
-  .tier { font-family: var(--mono); font-size: .8rem; padding: .16rem .5rem; border-radius: 3px; white-space: nowrap; }
-  .t-db { background: #14372a; color: #8fd9b2; }
-  .t-tx { background: #1d3142; color: #93bfe0; }
-  .t-app { background: #3a2f10; color: #dcb964; }
+  header { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.4rem; }
+  h1 { font-size: 2rem; margin: 0; letter-spacing: -.025em; }
+  header .tag { color: var(--dim); font-family: var(--mono); font-size: .92rem; }
+
+  .stats { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 3.2rem; }
+  .stat { flex: 1; padding: .85rem 1.1rem; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: none; }
+  .stat b { display: block; font-size: 1.65rem; line-height: 1.1; letter-spacing: -.02em; }
+  .stat span { color: var(--dim); font-size: .82rem; }
+  .g { color: var(--ok); } .r { color: var(--no); }
+
+  section { margin-bottom: 3.4rem; }
+  h2 { font-size: 1.3rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
+  .lede { color: var(--dim); margin: 0 0 1.5rem; max-width: 76ch; font-size: 1rem; }
+  .lede b { color: var(--ink); font-weight: 600; }
+  svg { width: 100%; height: auto; display: block; }
 </style>
 </head>
 <body>
 <main>
 
-  <h1>TrustGate</h1>
-  <div class="sub">authorization between an AI agent and a payment provider</div>
+  <header>
+    <h1>TrustGate</h1>
+    <div class="tag">authorization between an AI agent and a payment provider</div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><b>3</b><span>fields an agent may set</span></div>
+    <div class="stat"><b class="g">5</b><span>MCP tools</span></div>
+    <div class="stat"><b class="r">0</b><span>of them can move money</span></div>
+    <div class="stat"><b>53</b><span>guards deleted, all caught</span></div>
+    <div class="stat"><b>16</b><span>attacks refused, with tests</span></div>
+  </div>
 
   <section>
-    <h2>1 · The trust boundary</h2>
+    <h2>1 &middot; The trust boundary</h2>
     <p class="lede">
-      The agent proposes <strong>three fields</strong>. Everything that decides what the money does
-      is derived on the server. There is no amount field for injected text to fill.
+      The agent proposes <b>three fields</b>. Everything that decides what the money does is derived
+      server-side. <b>There is no amount field for injected text to fill.</b>
     </p>
 
-    <svg viewBox="0 0 1120 300" role="img" aria-label="Trust boundary diagram">
-      <rect x="8" y="52" width="250" height="196" rx="10" fill="#1a1508" stroke="#5c4413"/>
-      <text x="133" y="82" text-anchor="middle" fill="#e8c877" font-size="17" font-weight="700">AI buyer agent</text>
-      <text x="133" y="105" text-anchor="middle" fill="#a8935c" font-size="13">untrusted by design</text>
-      <text x="133" y="140" text-anchor="middle" fill="#e8c877" font-size="14" font-family="ui-monospace, monospace">sku</text>
-      <text x="133" y="166" text-anchor="middle" fill="#e8c877" font-size="14" font-family="ui-monospace, monospace">quantity</text>
-      <text x="133" y="192" text-anchor="middle" fill="#e8c877" font-size="14" font-family="ui-monospace, monospace">purpose</text>
-      <text x="133" y="224" text-anchor="middle" fill="#a8935c" font-size="12">and nothing else</text>
+    <svg viewBox="0 0 1200 250" role="img" aria-label="Trust boundary">
+      <rect x="4" y="40" width="260" height="176" rx="11" fill="#1a1508" stroke="#5c4413" stroke-width="1.5"/>
+      <text x="134" y="70" text-anchor="middle" fill="#e8c877" font-size="18" font-weight="700">AI buyer agent</text>
+      <text x="134" y="92" text-anchor="middle" fill="#a8935c" font-size="13">untrusted by design</text>
+      <text x="134" y="128" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">sku</text>
+      <text x="134" y="154" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">quantity</text>
+      <text x="134" y="180" text-anchor="middle" fill="#e8c877" font-size="16" font-family="ui-monospace, monospace">purpose</text>
+      <text x="134" y="204" text-anchor="middle" fill="#a8935c" font-size="12.5">and nothing else</text>
 
-      <line x1="318" y1="24" x2="318" y2="284" stroke="#e0847c" stroke-width="2" stroke-dasharray="7 6"/>
-      <text x="318" y="16" text-anchor="middle" fill="#e0847c" font-size="12" letter-spacing="1.5">TRUST BOUNDARY</text>
+      <line x1="330" y1="14" x2="330" y2="240" stroke="#e0847c" stroke-width="2" stroke-dasharray="7 6"/>
+      <text x="330" y="8" text-anchor="middle" fill="#e0847c" font-size="11.5" letter-spacing="1.6">TRUST BOUNDARY</text>
+      <line x1="264" y1="128" x2="384" y2="128" stroke="#6fbf95" stroke-width="2.5"/>
+      <polygon points="384,128 372,122 372,134" fill="#6fbf95"/>
+      <rect x="252" y="96" width="156" height="18" fill="#0a0f10"/>
+      <text x="330" y="110" text-anchor="middle" fill="#6fbf95" font-size="11.5">the only arrow it crosses</text>
 
-      <line x1="258" y1="150" x2="368" y2="150" stroke="#6fbf95" stroke-width="2"/>
-      <polygon points="368,150 358,145 358,155" fill="#6fbf95"/>
-      <rect x="240" y="118" width="146" height="18" fill="#0a0f10"/>
-      <text x="313" y="132" text-anchor="middle" fill="#6fbf95" font-size="11">the only arrow it crosses</text>
+      <rect x="396" y="40" width="368" height="176" rx="11" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
+      <text x="580" y="70" text-anchor="middle" fill="#8fd9b2" font-size="18" font-weight="700">TrustGate</text>
+      <text x="580" y="92" text-anchor="middle" fill="#6a9d84" font-size="13">derives, then decides</text>
+      <text x="580" y="128" text-anchor="middle" fill="#dcefe4" font-size="15">merchant &middot; amount &middot; currency</text>
+      <text x="580" y="149" text-anchor="middle" fill="#6a9d84" font-size="12.5">from the catalogue, never the agent</text>
+      <text x="580" y="180" text-anchor="middle" fill="#dcefe4" font-size="15">policy &middot; delegation &middot; approval</text>
+      <text x="580" y="201" text-anchor="middle" fill="#6a9d84" font-size="12.5">evaluated server-side</text>
 
-      <rect x="380" y="52" width="330" height="196" rx="10" fill="#0f2a20" stroke="#2c6349"/>
-      <text x="545" y="82" text-anchor="middle" fill="#8fd9b2" font-size="17" font-weight="700">TrustGate</text>
-      <text x="545" y="105" text-anchor="middle" fill="#6a9d84" font-size="13">derives, then decides</text>
-      <text x="545" y="140" text-anchor="middle" fill="#c9e6d8" font-size="13.5">merchant · amount · currency</text>
-      <text x="545" y="164" text-anchor="middle" fill="#6a9d84" font-size="12">looked up from the catalogue</text>
-      <text x="545" y="196" text-anchor="middle" fill="#c9e6d8" font-size="13.5">policy · delegation · approval</text>
-      <text x="545" y="220" text-anchor="middle" fill="#6a9d84" font-size="12">evaluated server-side</text>
+      <line x1="764" y1="128" x2="860" y2="128" stroke="#4c6b6b" stroke-width="2"/>
+      <polygon points="860,128 848,122 848,134" fill="#4c6b6b"/>
+      <rect x="770" y="96" width="86" height="18" fill="#0a0f10"/>
+      <text x="812" y="110" text-anchor="middle" fill="#8fa6a6" font-size="11.5">a human pays</text>
 
-      <line x1="710" y1="150" x2="800" y2="150" stroke="#4c6b6b" stroke-width="2"/>
-      <polygon points="800,150 790,145 790,155" fill="#4c6b6b"/>
-      <text x="755" y="140" text-anchor="middle" fill="#8fa6a6" font-size="11">a human pays</text>
-
-      <rect x="812" y="52" width="300" height="196" rx="10" fill="#101a1c" stroke="#223436"/>
-      <text x="962" y="82" text-anchor="middle" fill="#e6efef" font-size="17" font-weight="700">Razorpay Test Mode</text>
-      <text x="962" y="105" text-anchor="middle" fill="#8fa6a6" font-size="13">executes a bounded order</text>
-      <text x="962" y="150" text-anchor="middle" fill="#6fbf95" font-size="13.5">signed payment.captured</text>
-      <text x="962" y="174" text-anchor="middle" fill="#8fa6a6" font-size="12">the only thing that moves money</text>
-      <text x="962" y="212" text-anchor="middle" fill="#8fa6a6" font-size="12">the browser callback is verified</text>
-      <text x="962" y="230" text-anchor="middle" fill="#8fa6a6" font-size="12">and deliberately ignored</text>
-    </svg>
-
-    <p class="cap">
-      Authorization and payment are separate steps. A purchase can sit <code>AUTHORIZED</code>
-      indefinitely with order creation still refused, because no checkout authority has been issued.
-      That gap is the product.
-    </p>
-  </section>
-
-  <section>
-    <h2>2 · The layers</h2>
-    <p class="lede">
-      Delete the agent entirely and everything below the second line is unchanged and still correct.
-      <strong>If the agent were the centre of this, the project would be arguing against itself.</strong>
-    </p>
-
-    <svg viewBox="0 0 1120 470" role="img" aria-label="Layer stack">
-      <rect x="120" y="8" width="880" height="62" rx="8" fill="#1a1508" stroke="#5c4413"/>
-      <text x="146" y="35" fill="#e8c877" font-size="15" font-weight="700" font-family="ui-monospace, monospace">agent/</text>
-      <text x="146" y="56" fill="#a8935c" font-size="13">Buyer agent — thin, untrusted, replaceable</text>
-
-      <line x1="560" y1="70" x2="560" y2="96" stroke="#3d5354" stroke-width="1.5"/>
-      <polygon points="560,96 555,87 565,87" fill="#3d5354"/>
-      <text x="576" y="88" fill="#8fa6a6" font-size="11.5">the narrow MCP contract</text>
-
-      <rect x="120" y="98" width="880" height="76" rx="8" fill="#131f21" stroke="#2f4547"/>
-      <text x="146" y="125" fill="#cfe3e3" font-size="15" font-weight="700" font-family="ui-monospace, monospace">mcp_server/</text>
-      <text x="146" y="146" fill="#8fa6a6" font-size="13">Five tools. No authorize, capture, or provider tool exists.</text>
-      <text x="146" y="165" fill="#6d8b8b" font-size="12" font-family="ui-monospace, monospace">list_catalog · create_payment_request_tool · evaluate_payment_policy · request_user_approval · get_payment_status</text>
-
-      <rect x="120" y="196" width="880" height="164" rx="8" fill="#0f2a20" stroke="#2c6349" stroke-width="1.5"/>
-      <text x="146" y="223" fill="#8fd9b2" font-size="15" font-weight="700" letter-spacing=".04em">THE AUTHORIZATION CORE — this is the product</text>
-      <text x="146" y="256" fill="#cfe3e3" font-size="13" font-family="ui-monospace, monospace">policy_engine/</text>
-      <text x="330" y="256" fill="#8fa6a6" font-size="13">pure rule evaluation + atomic daily budget</text>
-      <text x="146" y="281" fill="#cfe3e3" font-size="13" font-family="ui-monospace, monospace">delegation/</text>
-      <text x="330" y="281" fill="#8fa6a6" font-size="13">narrows per edge, partitions budget across siblings</text>
-      <text x="146" y="306" fill="#cfe3e3" font-size="13" font-family="ui-monospace, monospace">state_machine/</text>
-      <text x="330" y="306" fill="#8fa6a6" font-size="13">row-locked lifecycle transitions</text>
-      <text x="146" y="331" fill="#cfe3e3" font-size="13" font-family="ui-monospace, monospace">models/</text>
-      <text x="330" y="331" fill="#8fa6a6" font-size="13">invariants enforced as database constraints</text>
-
-      <rect x="120" y="382" width="880" height="34" rx="8" fill="#101a1c" stroke="#223436"/>
-      <text x="146" y="404" fill="#8fa6a6" font-size="13">Provider execution — Razorpay Test Mode · mock provider</text>
-
-      <rect x="120" y="424" width="880" height="34" rx="8" fill="#101a1c" stroke="#223436"/>
-      <text x="146" y="446" fill="#8fa6a6" font-size="13">Evidence receipt — proposed / derived / provider outcome</text>
+      <rect x="872" y="40" width="324" height="176" rx="11" fill="#101a1c" stroke="#223436" stroke-width="1.5"/>
+      <text x="1034" y="70" text-anchor="middle" fill="#eaf3f3" font-size="18" font-weight="700">Razorpay Test Mode</text>
+      <text x="1034" y="92" text-anchor="middle" fill="#8fa6a6" font-size="13">executes a bounded order</text>
+      <text x="1034" y="132" text-anchor="middle" fill="#6fbf95" font-size="15" font-family="ui-monospace, monospace">payment.captured</text>
+      <text x="1034" y="154" text-anchor="middle" fill="#8fa6a6" font-size="12.5">signed &mdash; the only thing that moves money</text>
+      <text x="1034" y="186" text-anchor="middle" fill="#8fa6a6" font-size="12.5">the browser callback is verified,</text>
+      <text x="1034" y="204" text-anchor="middle" fill="#8fa6a6" font-size="12.5">then deliberately ignored</text>
     </svg>
   </section>
 
   <section>
-    <h2>3 · Where each rule is enforced</h2>
+    <h2>2 &middot; The layers</h2>
     <p class="lede">
-      One rule throughout: <strong>enforce at the lowest layer that can hold it.</strong> Database
-      constraint over transaction, transaction over application code, application code over
-      convention — because a rule in Python is a rule a different query walks around.
+      <b>Delete the agent entirely and everything below the second line is unchanged, and still
+      correct.</b> If the agent were the centre of this, the project would be arguing against itself.
     </p>
 
-    <table>
-      <thead>
-        <tr><th style="width:38%">Invariant</th><th style="width:44%">Enforced by</th><th>Layer</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>No cross-tenant parent reference</td><td>Composite foreign keys on <code>(tenant_id, id)</code></td><td><span class="tier t-db">DATABASE</span></td></tr>
-        <tr><td>One active approval per request</td><td>Partial unique index where <code>consumed_at IS NULL</code></td><td><span class="tier t-db">DATABASE</span></td></tr>
-        <tr><td>Published policies are immutable</td><td>PostgreSQL trigger</td><td><span class="tier t-db">DATABASE</span></td></tr>
-        <tr><td>Valid payment states only</td><td><code>CHECK</code> constraint on the state column</td><td><span class="tier t-db">DATABASE</span></td></tr>
-        <tr><td>Siblings cannot outspend their parent</td><td><code>CHECK</code> on the parent's own row</td><td><span class="tier t-db">DATABASE</span></td></tr>
-        <tr><td>One provider order per authority</td><td>Unique on <code>(tenant_id, checkout_authority_id)</code></td><td><span class="tier t-db">DATABASE</span></td></tr>
-        <tr><td>Two requests cannot jointly exceed the daily limit</td><td>Conditional upsert with a <code>WHERE</code> predicate</td><td><span class="tier t-tx">TRANSACTION</span></td></tr>
-        <tr><td>An approval is consumed once</td><td>Conditional update inside the transition</td><td><span class="tier t-tx">TRANSACTION</span></td></tr>
-        <tr><td>An authority is claimed once</td><td><code>FOR UPDATE</code> on the authority row</td><td><span class="tier t-tx">TRANSACTION</span></td></tr>
-        <tr><td>Policy cannot drift mid-issuance</td><td><code>FOR UPDATE</code> on the tenant row</td><td><span class="tier t-tx">TRANSACTION</span></td></tr>
-        <tr><td>Amount and merchant derive from the catalog</td><td>Schema <code>extra="forbid"</code> plus server lookup</td><td><span class="tier t-app">APPLICATION</span></td></tr>
-        <tr><td>Webhook authenticity</td><td>HMAC over raw bytes, before parsing</td><td><span class="tier t-app">APPLICATION</span></td></tr>
-      </tbody>
-    </table>
+    <svg viewBox="0 0 1200 330" role="img" aria-label="Layer stack">
+      <rect x="0" y="0" width="1200" height="54" rx="9" fill="#1a1508" stroke="#5c4413" stroke-width="1.5"/>
+      <text x="24" y="25" fill="#e8c877" font-size="15" font-weight="700" font-family="ui-monospace, monospace">agent/</text>
+      <text x="24" y="44" fill="#a8935c" font-size="13">thin, untrusted, replaceable &mdash; proposes sku, quantity, purpose</text>
 
-    <p class="cap">
-      I learned that rule the hard way: I once wrote three over-committed sibling budgets straight
-      past my own validation module, and every check in it passed. The constraint that refuses it
-      now lives on the parent row.
+      <rect x="0" y="66" width="1200" height="62" rx="9" fill="#131f21" stroke="#2f4547" stroke-width="1.5"/>
+      <text x="24" y="90" fill="#cfe3e3" font-size="15" font-weight="700" font-family="ui-monospace, monospace">mcp_server/</text>
+      <text x="150" y="90" fill="#8fa6a6" font-size="13.5">five tools, none can authorize, capture, refund, or reach a provider</text>
+      <text x="24" y="114" fill="#6d8b8b" font-size="12" font-family="ui-monospace, monospace">list_catalog &middot; create_payment_request_tool &middot; evaluate_payment_policy &middot; request_user_approval &middot; get_payment_status</text>
+
+      <line x1="0" y1="140" x2="1200" y2="140" stroke="#6fbf95" stroke-width="1" stroke-dasharray="4 5" opacity=".65"/>
+      <rect x="466" y="131" width="268" height="18" fill="#0a0f10"/>
+      <text x="600" y="145" text-anchor="middle" fill="#6fbf95" font-size="11.5">everything below here survives deleting the agent</text>
+
+      <rect x="0" y="158" width="1200" height="130" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2"/>
+      <text x="24" y="184" fill="#8fd9b2" font-size="15" font-weight="700" letter-spacing=".05em">THE AUTHORIZATION CORE &mdash; this is the product</text>
+      <text x="24" y="214" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">policy_engine/</text>
+      <text x="230" y="214" fill="#8fa6a6" font-size="13.5">rule evaluation, atomic daily budget</text>
+      <text x="640" y="214" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">state_machine/</text>
+      <text x="830" y="214" fill="#8fa6a6" font-size="13.5">row-locked transitions</text>
+      <text x="24" y="243" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">delegation/</text>
+      <text x="230" y="243" fill="#8fa6a6" font-size="13.5">narrows per edge, partitions across siblings</text>
+      <text x="640" y="243" fill="#dcefe4" font-size="13.5" font-family="ui-monospace, monospace">models/</text>
+      <text x="830" y="243" fill="#8fa6a6" font-size="13.5">invariants as database constraints</text>
+      <text x="24" y="272" fill="#6a9d84" font-size="12.5">Razorpay Test Mode below it; the evidence receipt above it, showing proposed / derived / provider outcome</text>
+
+      <rect x="0" y="298" width="1200" height="32" rx="9" fill="#101a1c" stroke="#223436"/>
+      <text x="24" y="319" fill="#8fa6a6" font-size="13">Provider execution &mdash; a bounded order, then a signed event back</text>
+    </svg>
+  </section>
+
+  <section>
+    <h2>3 &middot; Where each rule is enforced</h2>
+    <p class="lede">
+      One principle: <b>enforce at the lowest layer that can hold it.</b> A rule in application code
+      is a rule a different query walks around &mdash; so most of them are not in code at all.
     </p>
+
+    <svg viewBox="0 0 1200 340" role="img" aria-label="Enforcement ladder: 2 application, 4 transaction, 6 database">
+      <rect x="330" y="6" width="540" height="92" rx="9" fill="#241d0b" stroke="#5c4413" stroke-width="1.5"/>
+      <text x="360" y="42" fill="#e8c877" font-size="34" font-weight="700" font-family="ui-monospace, monospace">2</text>
+      <text x="404" y="36" fill="#e8c877" font-size="15" font-weight="700" letter-spacing=".08em">APPLICATION CODE</text>
+      <text x="404" y="58" fill="#a8935c" font-size="13">schema forbids unknown fields &middot; HMAC over raw bytes before parsing</text>
+      <text x="360" y="86" fill="#8a7440" font-size="12.5">weakest: a different code path can miss it</text>
+
+      <rect x="210" y="110" width="780" height="92" rx="9" fill="#141f2b" stroke="#2f4a63" stroke-width="1.5"/>
+      <text x="240" y="146" fill="#93bfe0" font-size="34" font-weight="700" font-family="ui-monospace, monospace">4</text>
+      <text x="284" y="140" fill="#93bfe0" font-size="15" font-weight="700" letter-spacing=".08em">TRANSACTION</text>
+      <text x="284" y="162" fill="#7d9ab5" font-size="13">daily limit by conditional upsert &middot; approval consumed once &middot; FOR UPDATE on the authority and the tenant row</text>
+      <text x="240" y="190" fill="#64809a" font-size="12.5">holds under concurrency, inside one transaction</text>
+
+      <rect x="60" y="214" width="1080" height="112" rx="9" fill="#0f2a20" stroke="#2c6349" stroke-width="2.5"/>
+      <text x="92" y="254" fill="#8fd9b2" font-size="38" font-weight="700" font-family="ui-monospace, monospace">6</text>
+      <text x="144" y="248" fill="#8fd9b2" font-size="16" font-weight="700" letter-spacing=".08em">DATABASE CONSTRAINT</text>
+      <text x="144" y="272" fill="#a8ccbb" font-size="13">composite foreign keys on (tenant_id, id) &middot; partial unique index on live approvals &middot; immutability trigger</text>
+      <text x="144" y="292" fill="#a8ccbb" font-size="13">CHECK on payment state &middot; CHECK that siblings cannot outspend their parent &middot; one provider order per authority</text>
+      <text x="92" y="316" fill="#6a9d84" font-size="12.5">strongest: no query can get around it, including mine</text>
+    </svg>
   </section>
 
 </main>
