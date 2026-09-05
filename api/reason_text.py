@@ -90,6 +90,20 @@ _PLAIN: dict[str, str] = {
 }
 
 
+PROGRESSED_REASONS = frozenset({"PAYMENT_ALREADY_SETTLED", "PAYMENT_ALREADY_WITH_THE_PROVIDER"})
+"""Reasons no further provider call is allowed *because the purchase already moved on*.
+
+Every other blocked reason withholds authority: none was issued, it expired, it was used, the chain
+was revoked. Those are refusals, and saying so plainly is the point of both screens.
+
+These two are the opposite. A captured payment reaching the same field means it already paid, and
+rendering that as a refusal beside a row reading CAPTURED tells a reader something went wrong on
+the one purchase where everything went right. Same field, opposite meaning, so it gets its own
+wording - and it lives here rather than in either renderer, because the console and the receipt
+must not disagree about which reasons are which.
+"""
+
+
 def humanise(code: str) -> str:
     """One reason code, in a sentence. Never empty, never raises, never the bare code.
 

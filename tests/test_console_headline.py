@@ -360,3 +360,30 @@ def test_a_completed_purchase_is_not_dressed_as_a_refusal() -> None:
 
     # An unknown or absent code falls back to the refusal rendering, which is the safe direction.
     assert "class='no'" in panel("SOMETHING_NOBODY_HAS_WRITTEN_YET")
+
+
+def test_the_receipt_and_the_banner_agree_about_a_settled_purchase() -> None:
+    """Same fact, two screens, and they used to word it differently.
+
+    The banner was fixed first; the receipt still said NOT ALLOWED over a purchase that had
+    already paid. A reader lingers on the receipt far longer than on the banner, so it was the
+    worse of the two places to leave it.
+    """
+
+    from api.reason_text import PROGRESSED_REASONS
+    from api.receipt import _provider_action
+
+    class _Envelope:
+        def __init__(self, allowed: bool, reason: str | None) -> None:
+            self.provider_action_allowed = allowed
+            self.provider_action_blocked_reason = reason
+
+    for code in PROGRESSED_REASONS:
+        rendered = _provider_action(_Envelope(False, code))  # type: ignore[arg-type]
+        assert "NO LONGER NEEDED" in rendered, f"{code} still reads as a refusal on the receipt"
+        assert "NOT ALLOWED" not in rendered
+
+    # The refusals must keep refusing, in the same words as before.
+    withheld = _provider_action(_Envelope(False, "NO_CHECKOUT_AUTHORITY_ISSUED"))  # type: ignore[arg-type]
+    assert "NOT ALLOWED" in withheld
+    assert _provider_action(_Envelope(True, None)) == "<strong class='verdict'>ALLOWED</strong>"  # type: ignore[arg-type]

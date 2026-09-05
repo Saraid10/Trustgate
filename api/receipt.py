@@ -13,10 +13,30 @@ from __future__ import annotations
 
 import html
 
-from api.reason_text import humanise
-from schemas.domain import PaymentRequestEvidence
+from api.reason_text import PROGRESSED_REASONS, humanise
+from schemas.domain import AuthorizationEnvelope, PaymentRequestEvidence
 
 _DECISION_TONE = {"ALLOW": "ok", "REQUIRE_APPROVAL": "warn", "DENY": "bad"}
+
+
+def _provider_action(envelope: AuthorizationEnvelope) -> str:
+    """Whether the provider may still be called, in the words the outcome deserves.
+
+    Three answers, not two. Allowed; withheld, which is a refusal and the point of the receipt; and
+    no longer needed, which is what a captured payment is and reads as a failure if given the same
+    words as the second.
+    """
+
+    reason = envelope.provider_action_blocked_reason
+    if envelope.provider_action_allowed:
+        return "<strong class='verdict'>ALLOWED</strong>"
+    verdict = "NO LONGER NEEDED" if reason in PROGRESSED_REASONS else "NOT ALLOWED"
+    if reason is None:
+        return f"<strong class='verdict'>{verdict}</strong>"
+    return (
+        f"<strong class='verdict'>{verdict}</strong> "
+        f"<span class='muted'>{_text(humanise(reason))}</span>"
+    )
 
 
 def _money(amount_minor: int, currency: str) -> str:
@@ -176,16 +196,13 @@ def render_receipt(evidence: PaymentRequestEvidence) -> str:
             ("Authority expires", _text(envelope.authority_expires_at)),
             (
                 "Provider action",
-                "<strong class='verdict'>ALLOWED</strong>"
-                if envelope.provider_action_allowed
                 # In words, like the console panel. The same field rendering as a sentence in one
                 # place and as `PAYMENT_ALREADY_SETTLED` in the other made the receipt - the
                 # artifact a reader actually lingers on - the less readable of the two.
-                else f"<strong class='verdict'>NOT ALLOWED</strong> "
-                f"<span class='muted'>{_text(humanise(envelope.provider_action_blocked_reason))}"
-                "</span>"
-                if envelope.provider_action_blocked_reason is not None
-                else "<strong class='verdict'>NOT ALLOWED</strong>",
+                #
+                # And "NOT ALLOWED" over a purchase that already paid says the opposite of what
+                # happened. The console banner learned this first; the two must agree.
+                _provider_action(envelope),
             ),
         ]
     )

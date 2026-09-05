@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from api.reason_text import PROGRESSED_REASONS
+
 # A decision's tone is its own, but an outcome can override it. A request that was allowed and then
 # refused by the provider is not a green row, and colouring it by the decision alone would tell a
 # viewer the opposite of what happened.
@@ -246,18 +248,6 @@ def _row(entry: ConsoleEntry, *, receipt_href: str | None) -> str:
     )
 
 
-_PROGRESSED = frozenset({"PAYMENT_ALREADY_SETTLED", "PAYMENT_ALREADY_WITH_THE_PROVIDER"})
-"""Reasons that no further provider call is allowed *because the purchase already moved on*.
-
-Every other blocked reason means authority is being withheld: no authority was issued, it expired,
-it was used, the chain was revoked. Those are refusals and they are the point of this screen.
-
-These two are not. A captured payment reaching `Order creation allowed: No` in refusal red, beside
-a row reading CAPTURED, tells a viewer something went wrong on the one beat where everything went
-right. Same fact, opposite meaning, so it gets its own voice.
-"""
-
-
 def _headline_panel(headline: ConsoleHeadline | None) -> str:
     """The verdict, why, and whether money may move - in that order, because that is the order
     someone reads them in and the order they matter in."""
@@ -270,7 +260,7 @@ def _headline_panel(headline: ConsoleHeadline | None) -> str:
     )
     if headline.provider_action_allowed:
         provider = "<span class='yes'>Order creation allowed: Yes</span>"
-    elif headline.provider_action_blocked_code in _PROGRESSED:
+    elif headline.provider_action_blocked_code in PROGRESSED_REASONS:
         provider = (
             "<span class='done'>Order creation allowed: No longer needed</span>"
             f"<span class='muted'>{_text(headline.provider_action_blocked_reason)}</span>"
