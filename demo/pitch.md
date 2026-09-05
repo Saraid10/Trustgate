@@ -35,7 +35,12 @@ The spoken text below is **1036 words**, and 907 with every cut taken. Both numb
 and a test fails if they drift.
 
 What that becomes on camera depends entirely on how fast you speak, so time a rehearsal take before
-you decide anything. Add roughly 25 seconds to every figure for the pauses and the scrolling.
+you decide anything. Add roughly **40 seconds** to every figure below for the deliberate pauses, the
+four scrolls through the architecture page, and the time between commands.
+
+**The clock on each beat heading is the fast reading** — 230 wpm plus that slack, landing at
+**5:10**. If you read more slowly the beats stretch proportionally, so treat the headings as
+proportions rather than as a stopwatch.
 
 | Your pace | As written | With all four cuts |
 |---|---|---|
@@ -52,7 +57,7 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 
 ---
 
-## 0:00 – 0:45 · Start with the thing going wrong
+## 0:00 – 0:33 · Start with the thing going wrong
 
 **Run:** `python -m demo.unguarded`
 
@@ -73,7 +78,7 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 
 ---
 
-## 0:45 – 1:35 · A purchase that works, and the gap that is the product
+## 0:33 – 1:12 · A purchase that works, and the gap that is the product
 
 **Run:** `python -m agent.demo "Buy Starter credits"` — then refresh the console.
 
@@ -97,7 +102,7 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 
 ---
 
-## 1:35 – 2:10 · The attack, refused
+## 1:12 – 1:37 · The attack, refused
 
 **Run:** `python -m agent.demo --adversarial "Buy cloud credits"` — refresh.
 
@@ -116,7 +121,7 @@ dense enough that a rushed delivery loses the delegation argument entirely.
 
 ---
 
-## 2:10 – 3:05 · Delegation — the part nobody else did
+## 1:37 – 2:38 · Delegation — the part nobody else did
 
 **Run:** `python -m agent.delegate` — let the chain print, then **switch to the architecture tab,
 section 3.** Terminal text is hard to read on video; the diagram is not. Run it for real, explain it
@@ -151,7 +156,7 @@ from the picture.
 
 ---
 
-## 3:05 – 4:20 · The architecture — this is the centre of the video
+## 2:38 – 4:09 · The architecture — this is the centre of the video
 
 **Open this in a browser tab before you start recording:**
 
@@ -167,7 +172,7 @@ Land on the stat strip for two seconds before you say anything. It reads
 **3 fields · 5 tools · 0 can move money · 53 guards · 16 attacks**, and it does a lot of the
 arguing for you.
 
-### 3:05 · Section 1 — the trust boundary
+### 2:42 · Section 1 — the trust boundary
 
 > "So — the shape of it, because this is the actual contribution.
 >
@@ -177,7 +182,7 @@ arguing for you.
 
 **Scroll to section 2.**
 
-### 3:22 · Section 2 — the gap
+### 2:58 · Section 2 — the gap
 
 > "And this is the distinction I'd most want to land. Authorized and able to pay are two different
 > states here, and most systems collapse them into one. Between them sits a separate authority:
@@ -188,7 +193,7 @@ arguing for you.
 
 **Scroll past section 3 — you already did it — to section 4.**
 
-### 3:45 · Section 4 — the layers
+### 3:18 · Section 4 — the layers
 
 > "The layers. Agent on top, untrusted and replaceable. Then five MCP tools, and not one of them can
 > authorize, capture, refund, or reach a provider. Below that, the authorization core.
@@ -199,7 +204,7 @@ arguing for you.
 
 **Scroll to the ladder.**
 
-### 4:00 · Section 5 — where each rule is enforced
+### 3:40 · Section 5 — where each rule is enforced
 
 **Point at the widest bar as you say the number.**
 
@@ -217,7 +222,7 @@ arguing for you.
 
 ---
 
-## 4:05 – 4:50 · What the tests are worth, and the limits
+## 4:09 – 5:03 · What the tests are worth, and the limits
 
 ⚠️ **Do not start this on camera.** `python -m scenarios.mutation` takes **5 minutes 45 seconds**
 and prints *nothing at all* until it finishes — it would be a blank terminal for the whole beat.
@@ -246,7 +251,7 @@ when). By this point it has finished. Switch to that window and scroll slowly up
 
 ---
 
-## 4:50 – 5:00 · Close
+## 5:03 – 5:10 · Close
 
 **Slow down.**
 
