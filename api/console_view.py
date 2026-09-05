@@ -64,6 +64,14 @@ class ConsoleHeadline:
     receipt - which is the strongest thing this system does and the easiest thing to render as an
     empty panel if nobody says so on purpose."""
 
+    provider_action_blocked_code: str | None = None
+    """The raw reason code, kept beside the humanised sentence purely so the panel can tell a
+    refusal from a completion. Matching on the English would break the first time it is reworded.
+
+    Last and defaulted so every existing constructor keeps working; the panel falls back to the
+    refusal rendering when it is absent, which is the safe direction to be wrong in.
+    """
+
 
 @dataclass(frozen=True)
 class ConsoleEntry:
@@ -238,6 +246,18 @@ def _row(entry: ConsoleEntry, *, receipt_href: str | None) -> str:
     )
 
 
+_PROGRESSED = frozenset({"PAYMENT_ALREADY_SETTLED", "PAYMENT_ALREADY_WITH_THE_PROVIDER"})
+"""Reasons that no further provider call is allowed *because the purchase already moved on*.
+
+Every other blocked reason means authority is being withheld: no authority was issued, it expired,
+it was used, the chain was revoked. Those are refusals and they are the point of this screen.
+
+These two are not. A captured payment reaching `Order creation allowed: No` in refusal red, beside
+a row reading CAPTURED, tells a viewer something went wrong on the one beat where everything went
+right. Same fact, opposite meaning, so it gets its own voice.
+"""
+
+
 def _headline_panel(headline: ConsoleHeadline | None) -> str:
     """The verdict, why, and whether money may move - in that order, because that is the order
     someone reads them in and the order they matter in."""
@@ -250,6 +270,11 @@ def _headline_panel(headline: ConsoleHeadline | None) -> str:
     )
     if headline.provider_action_allowed:
         provider = "<span class='yes'>Order creation allowed: Yes</span>"
+    elif headline.provider_action_blocked_code in _PROGRESSED:
+        provider = (
+            "<span class='done'>Order creation allowed: No longer needed</span>"
+            f"<span class='muted'>{_text(headline.provider_action_blocked_reason)}</span>"
+        )
     else:
         provider = (
             "<span class='no'>Order creation allowed: No</span>"
@@ -365,6 +390,7 @@ def render_console(
                          align-items: baseline; flex-wrap: wrap; }}
   .headline .provider .yes {{ color: #2c6349; }}
   .headline .provider .no {{ color: #973029; }}
+  .headline .provider .done {{ color: #2c6349; }}
   .headline .authority {{ margin-top: .55rem; font-size: .9rem; display: flex; gap: .5rem;
                           align-items: baseline; flex-wrap: wrap; }}
   .headline .muted {{ font-weight: 400; }}
@@ -403,6 +429,7 @@ def render_console(
     table, .tally div, .empty, .headline {{ background: #101a1c; border-color: #223436; }}
     .headline .provider .yes {{ color: #6fbf95; }}
     .headline .provider .no {{ color: #e0847c; }}
+    .headline .provider .done {{ color: #6fbf95; }}
     th {{ border-color: #223436; color: #e6efef; }}
     td {{ border-color: #162426; }}
     .purpose {{ color: #e6efef; }}

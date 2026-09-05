@@ -298,6 +298,7 @@ async def _headline(
             reasons=humanise_all(newest.reasons),
             provider_action_allowed=False,
             provider_action_blocked_reason=humanise("NO_PAYMENT_REQUEST_CREATED"),
+            provider_action_blocked_code="NO_PAYMENT_REQUEST_CREATED",
             delegation_root_actor_id=None,
             delegation_remaining_minor=None,
             currency=newest.currency,
@@ -333,6 +334,7 @@ async def _headline(
             if envelope.provider_action_blocked_reason is not None
             else None
         ),
+        provider_action_blocked_code=envelope.provider_action_blocked_reason,
         delegation_root_actor_id=envelope.delegation_root_actor_id,
         delegation_remaining_minor=remaining,
         currency=envelope.currency,

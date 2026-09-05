@@ -317,3 +317,46 @@ def test_no_translation_is_blank_or_still_a_code() -> None:
         assert text.strip(), f"{code} translates to nothing"
         assert text != code, f"{code} translates to itself"
         assert "_" not in text, f"{code} still reads like a code: {text!r}"
+
+
+def test_a_completed_purchase_is_not_dressed_as_a_refusal() -> None:
+    """`Order creation allowed: No` means two opposite things, and the panel showed only one.
+
+    Every other blocked reason withholds authority: none was issued, it expired, it was used, the
+    chain was revoked. Those are refusals, and refusal red is right for them.
+
+    A captured payment reaches the same line for the opposite reason - it already paid. Rendering
+    that in red beside a row reading CAPTURED told a viewer something had gone wrong on the one
+    beat where everything went right. Caught on camera during a rehearsal, not by a test.
+    """
+
+    from api.console_view import ConsoleHeadline, _headline_panel
+
+    def panel(code: str) -> str:
+        return _headline_panel(
+            ConsoleHeadline(
+                verdict="AUTHORIZED",
+                tone="ok",
+                reasons=("Within every limit in the current policy",),
+                provider_action_allowed=False,
+                provider_action_blocked_reason=humanise(code),
+                delegation_root_actor_id=None,
+                delegation_remaining_minor=None,
+                currency="INR",
+                has_payment_request=True,
+                provider_action_blocked_code=code,
+            )
+        )
+
+    settled = panel("PAYMENT_ALREADY_SETTLED")
+    assert "class='done'" in settled, "a captured payment still renders as a refusal"
+    assert "class='no'" not in settled
+    assert "No longer needed" in settled
+
+    # The beat the whole demo turns on. This one must keep saying No, in red.
+    withheld = panel("NO_CHECKOUT_AUTHORITY_ISSUED")
+    assert "class='no'" in withheld, "authorized-but-cannot-pay stopped reading as a refusal"
+    assert "Order creation allowed: No<" in withheld
+
+    # An unknown or absent code falls back to the refusal rendering, which is the safe direction.
+    assert "class='no'" in panel("SOMETHING_NOBODY_HAS_WRITTEN_YET")
