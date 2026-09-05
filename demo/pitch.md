@@ -25,18 +25,19 @@ prose to the form. Draft answers for both form fields are in
 could ever speak.
 
 **What stays in the video is what only video can do:** money moving on screen when it shouldn't, a
-panel that says AUTHORIZED and *cannot pay* in the same breath, a refusal, and a mutation run
-deleting your own safety guards while you talk over it. None of that reads as text.
+panel that says AUTHORIZED and *cannot pay* in the same breath, a refusal, and the output of a run
+that deleted fifty-three of your own safety guards and found every one of them guarded. None of
+that reads as text.
 
 ## Length — read this before you record
 
-The spoken text below is **877 words**: about **5:51 of speech, 6:11 with pauses**. That is
+The spoken text below is **891 words**: about **5:56 of speech, 6:16 with pauses**. That is
 measured, not estimated, and a test fails if it drifts.
 
 The form calls for a *5-min* pitch video, so plan on cutting:
 
-- **Cuts `[CUT A]`–`[CUT C]`**, marked inline, remove 93 words → **784 words, 5:34 on camera**.
-- **Add `[CUT D]`** — four short asides — and it is **744 words, 5:18 on camera**. That is the
+- **Cuts `[CUT A]`–`[CUT C]`**, marked inline, remove 93 words → **798 words, 5:39 on camera**.
+- **Add `[CUT D]`** — four short asides — and it is **758 words, 5:23 on camera**. That is the
   shortest this gets without losing something that is doing real work.
 
 All four are listed at the bottom with what each costs. Decide which take you are recording before
@@ -176,13 +177,19 @@ down the page as you talk; it fills the whole beat.
 
 ## 4:05 – 4:50 · What the tests are worth, and the limits
 
-**Run:** `python -m scenarios.mutation`
+⚠️ **Do not start this on camera.** `python -m scenarios.mutation` takes **5 minutes 45 seconds**
+and prints *nothing at all* until it finishes — it would be a blank terminal for the whole beat.
 
-> "Which is how I know any of it holds. That's fifty-three deliberate breaks running — it deletes
-> each safety guard, one at a time, and requires the test protecting it to fail. A passing suite
-> tells you the code does what you wrote. It doesn't tell you the tests would notice if it stopped.
-> I found that out when I deleted an expired-policy check and three hundred and two tests passed.
-> That's what broke. `[CUT D →` It is the single reason the rest of this exists. `← CUT D]`
+**Instead:** run it in a second terminal **before you hit record** (the runbook's Part G tells you
+when). By this point it has finished. Switch to that window and scroll slowly up through the
+`[caught  ]` lines to the last line, `Every mutation was caught.`
+
+> "Which is how I know any of it holds. Fifty-three deliberate breaks — it deletes each safety
+> guard, one at a time, and requires the test protecting it to fail. This takes about six minutes,
+> so I started it before we began; that's the finished run. A passing suite tells you the code does
+> what you wrote. It doesn't tell you the tests would notice if it stopped. I found that out when I
+> deleted an expired-policy check and three hundred and two tests passed. That's what broke.
+> `[CUT D →` It is the single reason the rest of this exists. `← CUT D]`
 >
 > `[CUT C →` The attack matrix in the README is generated from the scenario registry, with a test
 > asserting they match, so the documentation can't claim an attack that isn't covered by a passing
@@ -208,8 +215,8 @@ down the page as you talk; it fills the whole beat.
 
 ## The cuts, in order
 
-Marked inline so you cannot lose your place mid-take. A through C take 877 words to 784 — **5:34 on
-camera**. Adding D gives 744 — **5:18**.
+Marked inline so you cannot lose your place mid-take. A through C take 891 words to 798 — **5:39 on
+camera**. Adding D gives 758 — **5:23**.
 
 | | What goes | Cost | Why it is the cheapest thing to lose |
 |---|---|---|---|
