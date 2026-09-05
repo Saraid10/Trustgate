@@ -31,17 +31,24 @@ that reads as text.
 
 ## Length — read this before you record
 
-The spoken text below is **891 words**: about **5:56 of speech, 6:16 with pauses**. That is
-measured, not estimated, and a test fails if it drifts.
+The spoken text below is **978 words**, and 844 with every cut taken. Both numbers are measured,
+and a test fails if they drift.
 
-The form calls for a *5-min* pitch video, so plan on cutting:
+What that becomes on camera depends entirely on how fast you speak, so time a rehearsal take before
+you decide anything. Add roughly 25 seconds to every figure for the pauses and the scrolling.
 
-- **Cuts `[CUT A]`–`[CUT C]`**, marked inline, remove 93 words → **798 words, 5:39 on camera**.
-- **Add `[CUT D]`** — four short asides — and it is **758 words, 5:23 on camera**. That is the
-  shortest this gets without losing something that is doing real work.
+| Your pace | As written | With all four cuts |
+|---|---|---|
+| 150 wpm — deliberate | 6:31 | 5:38 |
+| 190 wpm — brisk | 5:09 | 4:27 |
+| **230 wpm — fast** | **4:15** | 3:40 |
 
-All four are listed at the bottom with what each costs. Decide which take you are recording before
-the first one, and do not fix length by talking faster.
+If a rehearsal puts you near the bottom row, **record it as written and take no cuts at all** — the
+architecture beat is what the checklist actually asks for, and it is the last thing to shorten. The
+cuts exist for a slower reading, and are listed at the bottom.
+
+Do not fix length by talking faster than you naturally do. It is audible, and this script is already
+dense enough that a rushed delivery loses the delegation argument entirely.
 
 ---
 
@@ -139,39 +146,58 @@ the first one, and do not fix length by talking faster.
 
 ---
 
-## 3:05 – 4:05 · The architecture — this is the centre of the video
+## 3:05 – 4:20 · The architecture — this is the centre of the video
 
-Nothing to run, but **do not talk over a static screen for a minute.** Show the receipt: on the
-console, click **Receipt** on the Starter row. That page is the narration, already rendered.
+**Open this in a browser tab before you start recording:**
 
-- The **Authorization decision** block at the top is the envelope: decision, policy version,
-  approval state, delegation, and `Provider action: NOT ALLOWED`.
-- Below it, three numbered panels: **1 · Proposed** *(chosen by the buying agent)*,
-  **2 · Derived and authorized** *(determined by TrustGate)*, **3 · Provider outcome** *(what
-  Razorpay actually did)*.
+```
+demo/architecture.html
+```
 
-Say the "three columns side by side" sentence while those three panels are on screen. Scroll slowly
-down the page as you talk; it fills the whole beat.
+Three diagrams on one page, built for this beat. Scroll from one to the next as you talk — never
+talk over a screen that is not moving. Have it already open on a second tab; do not open it on
+camera.
 
-> "So — the shape of it, because that's the actual contribution.
+### 3:05 · Diagram 1 — the trust boundary
+
+> "So — the shape of it, because that's the actual contribution. Three pictures.
 >
-> The agent proposes, and nothing else. The MCP server exposes five tools, and none of them can
-> authorize, capture, refund, or reach a provider. Under that is the authorization core — policy,
-> delegation, the state machine, the constraints. Then the provider. Then the receipt, which puts
-> three columns side by side: what the agent proposed, what the server derived, and what the
-> provider actually did.
+> This is the trust boundary. The agent proposes three fields: SKU, quantity, purpose. That is the
+> only arrow it ever crosses. Everything that decides what the money does — merchant, amount,
+> currency — is looked up server-side from the catalogue. There is no amount field for injected
+> text to fill.
 >
-> The rule throughout: enforce at the lowest layer that can hold it. Database constraint over
-> transaction, transaction over application code, application code over convention. Cross-tenant
-> references are impossible because the foreign keys are composite on tenant and ID. One live
-> approval per request is a partial unique index. `[CUT D →` Published policies are immutable
-> because a trigger says so. `← CUT D]`
+> And on the right: only a signed provider event moves money."
+
+**Scroll to diagram 2.**
+
+### 3:30 · Diagram 2 — the layers
+
+> "These are the layers. The agent on top, untrusted and replaceable. Then five MCP tools, and none
+> of them can authorize, capture, refund, or reach a provider. Under that is the authorization
+> core — policy, delegation, the state machine, the constraints.
+>
+> And here is the claim I would stake the project on. Delete the agent entirely, and everything
+> below that second line is unchanged and still correct. If the agent were the centre of this, the
+> project would be arguing against itself."
+
+**Scroll to the table.**
+
+### 3:55 · Diagram 3 — where each rule is enforced
+
+> "And this is where each rule actually lives. One principle: enforce at the lowest layer that can
+> hold it. Database constraint over transaction, transaction over application code, application
+> code over convention.
+>
+> Cross-tenant references are impossible because the foreign keys are composite. One live approval
+> per request is a partial unique index. Siblings cannot outspend their parent because of a check
+> constraint on the parent's own row. `[CUT D →` Published policies are immutable because a trigger
+> says so. `← CUT D]`
+>
+> Six of those are database facts, not code I have to remember to call.
 >
 > `[CUT B →` I learned that one the hard way — I wrote three sibling budgets straight past my own
-> module and every check in it passed. `← CUT B]`
->
-> And delete the agent entirely: this core is unchanged and still correct. If the agent were the
-> centre of it, the project would be arguing against itself."
+> validation module and every check in it passed. `← CUT B]`"
 
 ---
 

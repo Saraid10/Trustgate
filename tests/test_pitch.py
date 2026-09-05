@@ -186,25 +186,67 @@ def test_the_length_it_claims_is_the_length_it_is() -> None:
     )
 
 
-def test_a_five_minute_take_is_still_reachable() -> None:
-    """The full text runs long on purpose; what must stay true is that the cuts actually get there.
+def test_the_pace_table_is_arithmetically_true() -> None:
+    """How long this takes depends on the reader, so the file publishes a table instead of a number.
 
-    Bounding the uncut version would be the wrong assertion. It is a superset by design - the take
-    you record when five minutes turns out to be guidance. What would quietly ruin a recording is
-    the *cut* path drifting past the slot, because that is the one you fall back on when the cap is
-    real, usually late and under pressure.
+    Bounding the script at one assumed speaking rate was the wrong assertion: the same words are a
+    six-minute video read deliberately and a four-minute one read fast, and the reader is the only
+    one who knows which they are. What must not happen is the table drifting away from the text it
+    describes - someone plans a recording around those figures, and a wrong one is discovered with
+    the tunnel up and the database seeded.
     """
 
     for cut in CUTS:
         assert f"[CUT {cut}" in _pitch(), f"CUT {cut} is gone, so the short take no longer exists"
 
-    shortest = _minutes(_spoken_words(applying="".join(CUTS)))
-    assert shortest <= 5.5, (
-        f"with every cut taken the pitch still runs {shortest:.1f} minutes; "
-        "the five-minute path has drifted"
+    rows = re.findall(
+        r"\|[^|\n]*?(\d{3}) wpm[^|\n]*\|\s*\**(\d):(\d\d)\**\s*\|\s*\**(\d):(\d\d)\**\s*\|",
+        _pitch(),
     )
+    assert len(rows) >= 3, "the pace table is gone or no longer parses"
 
-    # The cuts also have to be worth taking. If they save under half a minute they are decoration,
-    # and the reader is better served by being told to shorten a whole beat instead.
-    saved = _minutes(_spoken_words()) - shortest
+    full, cut = _spoken_words(), _spoken_words(applying="".join(CUTS))
+    for wpm, fm, fs, cm, cs in rows:
+        for words, minute, second, label in ((full, fm, fs, "as written"), (cut, cm, cs, "cut")):
+            stated = int(minute) * 60 + int(second)
+            actual = words / int(wpm) * 60
+            # Ten seconds of slack: the figures are rounded for a reader, not computed for a test.
+            assert abs(stated - actual) <= 10, (
+                f"at {wpm} wpm the table says {minute}:{second} {label}, "
+                f"but {words} words is {actual / 60:.0f}:{actual % 60:02.0f}"
+            )
+
+    # The cuts still have to be worth taking. Under half a minute saved and they are decoration.
+    saved = _minutes(full) - _minutes(cut)
     assert saved >= 0.5, f"the cuts only save {saved * 60:.0f} seconds; that is not a cut list"
+
+
+def test_the_architecture_page_it_tells_you_to_open_exists_and_is_true() -> None:
+    """The architecture beat is a page, not a command, so nothing else would notice it rotting.
+
+    It restates facts that live in the code - the five tool names, the enforcement ladder - and a
+    diagram that has drifted from the system is worse than no diagram, because it is on screen for
+    a minute while the narration vouches for it.
+    """
+
+    page = REPO_ROOT / "demo" / "architecture.html"
+
+    assert page.is_file(), "demo/pitch.md sends you to demo/architecture.html, which is missing"
+    assert "architecture.html" in _pitch(), "the pitch stopped pointing at the architecture page"
+
+    html = page.read_text(encoding="utf-8")
+
+    server = (REPO_ROOT / "mcp_server" / "server.py").read_text(encoding="utf-8")
+    tools = set(re.findall(r"^    async def (\w+)\(", server, re.MULTILINE))
+    assert len(tools) == 5, f"the tool surface changed: {sorted(tools)}"
+    for tool in tools:
+        assert tool in html, f"the architecture page does not name the tool {tool!r}"
+
+    # The ladder is quoted from docs/architecture.md. Both must keep saying the same thing.
+    for invariant in ("composite", "partial unique index", "trigger", "raw bytes"):
+        assert invariant.casefold() in html.casefold(), f"the page lost: {invariant!r}"
+
+    # Self-contained: it is opened from the filesystem with no server and possibly no network.
+    assert "http://" not in html and "https://" not in html, (
+        "the architecture page fetches something remote; it must render offline from file://"
+    )
